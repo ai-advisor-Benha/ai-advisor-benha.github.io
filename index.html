@@ -870,7 +870,7 @@ const I18N = {
     advNotEligible: 'Not eligible under the bylaw', advTampered: 'Warning: this file was changed after the student created it. Ask the student to send it again.',
     advAllOk: 'All courses pass the bylaw checks. Total {h} h of {max} h allowed.', advIssues: 'Some courses fail the bylaw checks or the total exceeds the limit ({h} h of {max} h).',
     advCheck: 'Bylaw check', advComment: 'Comment to the student', advChanges: 'Request changes', advApprove: 'Approve plan',
-    advDecisionNote: 'A decision file downloads; send it back to the student. It only matches this exact plan.', advNeedComment: 'Write a comment explaining the changes needed.',
+    advDecisionNote: 'A decision file downloads as a backup. An email notification is attempted when the secure notification service is configured. Sending does not guarantee inbox delivery.', advNeedComment: 'Write a comment explaining the changes needed.',
     calTitle: 'Academic calendar', calSub: 'Students see reminders as deadlines approach.', calTerm: 'Semester',
     calSave: 'Save calendar', calOrder: 'Registration must close after it opens.', calEmpty: 'Enter at least one date.',
     calSavedShared: 'Saved. All students using this system will see the reminders.', calSavedLocal: 'Saved in this browser only (shared saving needs the university server).',
@@ -1121,7 +1121,7 @@ I18N.ar = {
   advNotEligible: 'غير مؤهل وفق اللائحة', advTampered: 'تحذير: تم تعديل هذا الملف بعد أن أنشأه الطالب. اطلب منه إرساله مرة أخرى.',
   advAllOk: 'كل المقررات تجتاز فحوص اللائحة. الإجمالي {h} من {max} ساعة مسموحة.', advIssues: 'بعض المقررات لا تجتاز فحوص اللائحة أو الإجمالي يتجاوز الحد ({h} من {max} ساعة).',
   advCheck: 'فحص اللائحة', advComment: 'تعليق للطالب', advChanges: 'طلب تعديلات', advApprove: 'اعتماد الخطة',
-  advDecisionNote: 'سيتم تنزيل ملف القرار؛ أرسله للطالب. وهو مرتبط بهذه الخطة بالذات.', advNeedComment: 'اكتب تعليقًا يوضح التعديلات المطلوبة.',
+  advDecisionNote: 'سيتم تنزيل ملف القرار كنسخة احتياطية، وسيحاول النظام إرسال إشعار بالبريد الإلكتروني عند إعداد خدمة الإرسال الآمنة. قبول الإرسال لا يعني وصول الرسالة إلى صندوق الوارد.', advNeedComment: 'اكتب تعليقًا يوضح التعديلات المطلوبة.',
   calTitle: 'التقويم الأكاديمي', calSub: 'يرى الطلاب تذكيرات مع اقتراب المواعيد.', calTerm: 'الفصل الدراسي',
   calSave: 'حفظ التقويم', calOrder: 'يجب أن تنتهي فترة التسجيل بعد بدايتها.', calEmpty: 'أدخل تاريخًا واحدًا على الأقل.',
   calSavedShared: 'تم الحفظ. سيرى كل الطلاب المستخدمين للنظام التذكيرات.', calSavedLocal: 'تم الحفظ في هذا المتصفح فقط (الحفظ المشترك يحتاج خادم الجامعة).',
@@ -3802,19 +3802,58 @@ function renderAdvisorWS() {
       <div class="tbl-wrap"><table class="tbl"><thead><tr><th></th><th>${t('thCode')}</th><th>${t('thName')}</th><th>${t('thCr')}</th><th>${esc(t('advCheck'))}</th></tr></thead><tbody>${X.rows.map(x => `<tr><td>${okIcon(x.ok)}</td><td class="code">${esc(X.f.catalog[x.code]?.displayCode || x.code)}</td><td>${esc(x.name)}</td><td>${x.credits}</td><td class="small">${esc(x.ok ? x.cat : x.reasons.join('; '))}</td></tr>`).join('')}</tbody></table></div>
       <div class="field"><label for="adv-comment">${esc(t('advComment'))}</label><textarea class="input" id="adv-comment" rows="3" dir="auto"></textarea></div>
       <div class="flex flex-wrap gap-2 justify-end"><button class="btn btn-ghost" type="button" data-decide="changes">${esc(t('advChanges'))}</button><button class="btn btn-primary" type="button" data-decide="approved">${esc(t('advApprove'))}</button></div>
-      <p class="small muted">${esc(t('advDecisionNote'))}</p></div>`;
+      <p class="small muted">${esc(t('advDecisionNote'))}</p><div id="adv-mail-status" class="small" role="status" aria-live="polite"></div></div>`;
   }
   // calendar form
   const c = calendar || {};
   $('cal-term').value = c.term || ''; CAL_FIELDS.forEach(k => { $('cal-' + k).value = c[k] || ''; });
 }
+let advisorEmailSending = false;
 async function decide(kind) {
-  const { r } = advReview;
+  if (advisorEmailSending || !advReview || advReview.kind === 'course') return;
+  const { r, X, tampered } = advReview;
   const comment = $('adv-comment').value.trim();
+  if (tampered) { alertToast(t('advTampered')); return; }
   if (kind === 'changes' && !comment) { alertToast(t('advNeedComment')); return; }
-  const d = { type: 'ai-academic-advisor/decision', version: 1, fingerprint: r.fingerprint, decision: kind, comment, advisor: S.session.email, date: new Date().toISOString(), term: r.term, plan: r.plan, studentId: r.studentId };
+  if (kind === 'approved' && (!X.rows.every(x => x.ok) || X.overCap)) {
+    alertToast(LANG === 'ar' ? 'لا يمكن اعتماد خطة بها مخالفات للائحة أو ساعات زائدة.' : 'The plan fails a bylaw check or the allowed credit limit. Request changes instead.');
+    return;
+  }
+  const d = { type: 'ai-academic-advisor/decision', version: 1, fingerprint: r.fingerprint, decision: kind,
+    comment, advisor: S.session.email, date: new Date().toISOString(), term: r.term, plan: r.plan, studentId: r.studentId };
+  // Always retain the portable JSON decision as a fallback for manual delivery.
+  download((r.demo ? 'DEMO-' : '') + 'advisor-decision-' + idTag(r.studentId) + '-' + r.term.toLowerCase() + '.json',
+    JSON.stringify(d, null, 2), 'application/json');
   logUsage(kind === 'approved' ? 'approvalsGiven' : 'changesRequested');
-  download('advisor-decision-' + idTag(r.studentId) + '-' + r.term.toLowerCase() + '.json', JSON.stringify(d, null, 2), 'application/json');
+  const feedback = $('adv-mail-status');
+  feedback.style.color = 'var(--ink)';
+  feedback.textContent = LANG === 'ar' ? 'جارٍ إرسال إشعار البريد الإلكتروني...' : 'Submitting the email notification...';
+  advisorEmailSending = true;
+  document.querySelectorAll('[data-decide]').forEach(b => b.disabled = true);
+  try {
+    // Send minimal decision data: the full student transcript and grades stay in the browser.
+    const request = { type: r.type, version: r.version, fingerprint: r.fingerprint,
+      university: r.university, faculty: r.faculty, program: r.program, term: r.term,
+      plan: r.plan, studentId: r.studentId, email: r.email, demo: r.demo === true };
+    const response = await client().functions.invoke('advisor-decision-email', { body: { request, decision: kind, comment } });
+    if (response.error) {
+      let message = response.error.message || 'Notification request failed';
+      try { const details = await response.error.context?.json(); if (details?.error) message = details.error; } catch (_) {}
+      throw new Error(message);
+    }
+    if (!response.data || !response.data.ok) throw new Error(response.data?.error || 'No email confirmation received');
+    feedback.style.color = 'var(--emerald)';
+    feedback.textContent = LANG === 'ar'
+      ? 'قبلت خدمة البريد الإشعار إلى ' + response.data.recipient + (response.data.duplicate ? ' (أُرسل القرار من قبل)' : '') + '. راجع سجل Brevo للتأكد من التسليم.'
+      : 'Email accepted for ' + response.data.recipient + (response.data.duplicate ? ' (already sent)' : '') + '. Check Brevo logs for delivery status.';
+  } catch (e) {
+    feedback.style.color = 'var(--rose)';
+    feedback.textContent = (LANG === 'ar' ? 'تعذر إرسال إشعار البريد: ' : 'Email notification failed: ') + (e.message || String(e))
+      + (LANG === 'ar' ? ' — تم تنزيل ملف القرار لإرساله يدويًا.' : ' — Decision JSON was downloaded for manual delivery.');
+  } finally {
+    advisorEmailSending = false;
+    document.querySelectorAll('[data-decide]').forEach(b => b.disabled = false);
+  }
 }
 async function saveCalendarForm() {
   const c = { term: $('cal-term').value.trim() };

@@ -1,0 +1,4 @@
+[functions.advisor-decision-email]
+# Authentication is verified inside the Edge Function using Supabase Auth getUser(jwt).
+# The legacy gateway JWT check can reject modern signing keys.
+verify_jwt = false
