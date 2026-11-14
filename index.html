@@ -414,7 +414,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.88rem}
     <section id="step-4" class="space-y-5 hidden">
       <div><h2 id="s4-title"></h2><p class="muted mt-1" id="s4-sub"></p></div>
       <div class="panel panel-pad flex flex-wrap gap-5 items-end">
-        <div class="field"><label for="sel-term" id="l-term"></label><select class="select" id="sel-term" style="width:auto"></select></div>
+        <div class="field"><label for="sel-term" id="l-term"></label><select class="select" id="sel-term" style="width:auto"></select><div class="small muted mt-1" id="term-note" role="status"></div></div>
         <label class="flex items-center gap-2 small"><input type="checkbox" id="chk-ip" checked> <span id="l-ip"></span></label>
         <label class="flex items-center gap-2 small"><input type="checkbox" id="chk-cross"> <span id="l-cross"></span></label>
         <button class="btn btn-primary ms-auto" id="btn-auto" type="button"></button>
@@ -680,6 +680,8 @@ const I18N = {
     admMaintTitle: 'Maintenance', admMaintSub: 'These actions affect this browser only.', admResetStats: 'Reset statistics', admResetTour: 'Show the guide again to everyone', admChangeCode: 'Change administrator code',
     admConfirmRemove: 'Remove this uploaded bylaw from this browser?', admConfirmDelete: 'Delete the account {e} from this browser?', admConfirmStats: 'Reset all statistics on this browser?',
     admNewCode: 'New administrator access code (at least 6 characters):', admDone: 'Done.',
+    termAuto: 'automatic', termAutoNote: 'Chosen automatically: the semester after {last}, the latest in your transcript.', termManualNote: 'You changed the semester. The automatic choice from your transcript is {auto}.',
+    ibnTermMismatch: 'This Ibn Al-Haytham file is for {file}, while you are planning {plan}. The check below is done for {file} using your record before that registration.',
     langBtn: 'العربية',
     errStaff: 'Staff ID must be 4–14 digits.', errRole: 'This account is registered as {r}. Choose that role to sign in.',
     role: 'I am signing in as', roleStudent: 'Student', roleAdvisor: 'Academic advisor', staffId: 'Staff ID',
@@ -923,6 +925,8 @@ I18N.ar = {
   admMaintTitle: 'الصيانة', admMaintSub: 'تؤثر هذه الإجراءات على هذا المتصفح فقط.', admResetStats: 'تصفير الإحصاءات', admResetTour: 'إظهار الدليل للجميع مرة أخرى', admChangeCode: 'تغيير رمز المسؤول',
   admConfirmRemove: 'حذف هذه اللائحة المرفوعة من هذا المتصفح؟', admConfirmDelete: 'حذف الحساب {e} من هذا المتصفح؟', admConfirmStats: 'تصفير كل الإحصاءات على هذا المتصفح؟',
   admNewCode: 'رمز دخول المسؤول الجديد (6 أحرف على الأقل):', admDone: 'تم.',
+  termAuto: 'تلقائي', termAutoNote: 'تم الاختيار تلقائيًا: الفصل التالي بعد {last}، آخر فصل في بيان حالتك.', termManualNote: 'غيّرت الفصل. الاختيار التلقائي من بيان حالتك هو {auto}.',
+  ibnTermMismatch: 'ملف ابن الهيثم هذا لفصل {file}، بينما تخطط لفصل {plan}. الفحص التالي يتم لفصل {file} باستخدام سجلك قبل ذلك التسجيل.',
   langBtn: 'English',
   errStaff: 'يجب أن يتكون الرقم الوظيفي من 4 إلى 14 رقمًا.', errRole: 'هذا الحساب مسجّل بصفة {r}. اختر هذه الصفة لتسجيل الدخول.',
   role: 'أسجّل الدخول بصفتي', roleStudent: 'طالب', roleAdvisor: 'مرشد أكاديمي', staffId: 'الرقم الوظيفي',
@@ -2279,6 +2283,7 @@ function ingestAOA(aoa, label, isSample) {
     if (match && match.id !== S.depId) { S.depId = match.id; msg += ' ' + t('progDetected', { p: match.name }); }
     const pk = autoPickBylawVersion(); if (pk) msg += ' ' + t('bcPicked', { eff: pk.effectiveFrom });
     $('tr-msg').innerHTML = `<div class="alert alert-em">${esc(label)} — ${esc(msg)}${tr.warning ? '<br>' + esc(tr.warning) : ''}</div>`;
+    const at = autoTarget(); if (at) S.term = at.term;                  // target semester from the transcript
     recompute(); renderTranscript(); updateHeader(); renderStudentCard();
     logUsage('transcriptsLoaded'); if (S.depId) { usage.programs[S.depId] = (usage.programs[S.depId] || 0) + 1; saveUsage(); }
   } catch (e) { showTrError(e); }
@@ -2366,7 +2371,7 @@ function currentAdvice() { return advise(S.analysis, fac(), dept(), { term: S.te
 function catLabel(c) { return t(c); }
 function renderAdvising() {
   renderAutoPlan(); renderImprovement();
-  $('sel-term').value = S.term; $('chk-ip').checked = S.assumeIP; $('chk-cross').checked = S.showCross;
+  renderTermSelect(); $('chk-ip').checked = S.assumeIP; $('chk-cross').checked = S.showCross;
   const adv = currentAdvice();
   logBlocked(adv);
   const tabs = [['eligible', 'tabEligible', adv.eligible.length], ['blocked', 'tabBlocked', adv.blocked.length], ['completed', 'tabCompleted', adv.completed.length], ['roadmap', 'tabRoadmap', ''], ['map', 'tabMap', '']];
@@ -2912,7 +2917,8 @@ function renderIbnBox() {
       <details class="small"><summary class="cursor-pointer muted">${esc(t('ibnEvidence', { n: E.checks.length }))}</summary><ul class="space-y-1 mt-2">${E.checks.map(k => `<li class="flex gap-2 items-start">${okIcon(k.ok)}<span>${esc(k.text)}${k.art ? ` <span class="muted">(${esc(artAr(k.art))})</span>` : ''}</span></li>`).join('')}</ul></details>
       ${dec && dec.comment ? `<div class="small" dir="auto">“${esc(dec.comment)}”</div>` : ''}
       <label class="flex items-center gap-2 small"><input type="checkbox" data-ibn-miss="${esc(c)}" ${S.ibnMissChecked[c] ? 'checked' : ''}> ${esc(t('ibnNotAvailable'))}</label></div>`; };
-  const termNote = X.term !== S.term ? `<div class="small muted">${esc(t('ibnTermNote', { term: t(X.term.toLowerCase()) }))}</div>` : '';
+  const planY = termYearFor(S.term), mismatch = X.term !== S.term || (X.year && planY && X.year !== planY);
+  const termNote = mismatch ? `<div class="alert alert-am small">${esc(t('ibnTermMismatch', { file: semLabel(X.term + (X.year ? ' ' + X.year : '')), plan: curTermLabel() }))}</div>` : '';
   const anyChecked = X.missingReq.some(c => S.ibnMissChecked[c]);
   el.innerHTML = head + upload + `<div class="space-y-3 mt-3">
     <div class="alert alert-ac small"><b>${esc(t('ibnRead', { term: semLabel(X.term + (X.year ? ' ' + X.year : '')), n: X.reg.length, h: X.regHours }))}</b> ${S.ibn.kind === 'schedule' ? esc(t('ibnSchedule')) : ''}${S.ibn.unknown.length ? '<br>' + esc(t('ibnUnknown', { list: S.ibn.unknown.join(', ') })) : ''}</div>${termNote}
@@ -3184,7 +3190,7 @@ function renderAutoPlan() {
   const cat = fac().catalog;
   const notes = [P.electivesSkipped ? t('autoNoElective') : '', P.skippedTraining ? t('autoTraining') : '', P.heavyCount > 2 ? t('heavyMany', { n: P.heavyCount }) : ''].filter(Boolean);
   el.innerHTML = `<div class="panel panel-pad space-y-3" style="border-inline-start:3px solid var(--accent)">
-    <div class="flex flex-wrap justify-between gap-2 items-baseline"><h3>${esc(t('autoTitle', { term: t(P.term.toLowerCase()) }))}</h3><span class="code">${esc(t('autoTotal', { h: P.total, max: P.cap.max }))}</span></div>
+    <div class="flex flex-wrap justify-between gap-2 items-baseline"><h3>${esc(t('autoTitle', { term: curTermLabel(P.term) }))}</h3><span class="code">${esc(t('autoTotal', { h: P.total, max: P.cap.max }))}</span></div>
     <p class="small muted">${esc(t('autoSub', { max: P.cap.max }))}</p>
     <div class="flex flex-wrap items-center gap-2"><span class="small font-medium">${esc(t('interestLabel'))}:</span>${Object.keys(I).map(k => `<button type="button" class="chip-btn ${S.interest === k ? 'on' : ''}" data-interest="${k}" aria-pressed="${S.interest === k}">${esc(I[k])}</button>`).join('')}</div>
     ${P.picks.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>${t('thCode')}</th><th>${t('thName')}</th><th>${t('thCr')}</th><th>${t('thWhy')}</th></tr></thead><tbody>${P.picks.map(c => `<tr><td class="code">${esc(cat[c].displayCode || c)}</td><td>${esc(cat[c].name)}</td><td>${cat[c].credits}</td><td class="small">${esc(P.why[c])}${P.warn && P.warn[c] ? `<div class="small" style="color:var(--amber)">⚠ ${esc(P.warn[c])}</div>` : ''}</td></tr>`).join('')}</tbody></table></div>` : `<p class="small">${esc(t('autoEmpty'))}</p>`}
@@ -3559,7 +3565,7 @@ STRICT RULES — follow all of them:
 6. Reply in the same language as the student's question (Arabic or English). Be short and practical: the direct answer first, then the reason, then what to do next.
 7. Stay on academic registration and bylaw topics only.
 8. End with one short line reminding that the academic advisor's approval is still required for registration decisions.
-The student's semester selected in the system is ${S.term}.`;
+The semester the student is planning in the system is ${S.term}${termYearFor(S.term) ? ' ' + termYearFor(S.term) : ''}${autoTarget() && autoTarget().term === S.term ? ' (the next semester after the latest one in the transcript)' : ''}.`;
 }
 
 /* ---- provider adapter: the only part that depends on where the system runs ---- */
@@ -3648,6 +3654,35 @@ async function askQA(q) {
   renderQA(false);
 }
 
+/* ---- Target semester chosen automatically from the transcript ----
+   The next regular semester after the latest one in the record (summer is skipped unless the
+   student picks it). Every semester type gets its real academic year for labels. */
+function stepTerm(c) {
+  const y = /^(\d{4})-(\d{4})$/.exec(c.year || '');
+  if (c.term === 'Fall') return { term: 'Spring', year: c.year };
+  if (c.term === 'Spring') return { term: 'Summer', year: c.year };
+  return { term: 'Fall', year: y ? (+y[1] + 1) + '-' + (+y[2] + 1) : '' };
+}
+function lastSemester() {
+  const s = S.transcript ? S.transcript.semesters.filter(x => TERM_ORDER[x.term] != null) : [];
+  return s.length ? s[s.length - 1] : null;
+}
+function autoTarget() { const last = lastSemester(); if (!last) return null; const n = stepTerm(last); return n.term === 'Summer' ? stepTerm(n) : n; }
+function termYearFor(type) {
+  let cur = lastSemester(); if (!cur) return '';
+  for (let i = 0; i < 6; i++) { cur = stepTerm(cur); if (cur.term === type) return cur.year; }
+  return '';
+}
+function curTermLabel(term) { term = term || S.term; const y = termYearFor(term); return semLabel(term + (y ? ' ' + y : '')); }
+function renderTermSelect() {
+  const auto = autoTarget(), sel = $('sel-term');
+  sel.innerHTML = ['Fall', 'Spring', 'Summer'].map(x => `<option value="${x}" ${x === S.term ? 'selected' : ''}>${esc(curTermLabel(x))}${auto && auto.term === x ? ' — ' + esc(t('termAuto')) : ''}</option>`).join('');
+  const last = lastSemester();
+  $('term-note').innerHTML = !auto ? '' : S.term === auto.term
+    ? esc(t('termAutoNote', { last: semLabel(last.label) }))
+    : `<span style="color:var(--amber)">${esc(t('termManualNote', { auto: curTermLabel(auto.term) }))}</span>`;
+}
+
 /* ---- Step 5 ---- */
 function planHours() { const c = fac().catalog; return S.plan.reduce((s, k) => s + (c[k]?.credits || 0), 0); }
 function tryAdd(code) {
@@ -3667,7 +3702,7 @@ function renderRegistration() {
   const adv = currentAdvice(), elig = new Set(adv.eligible.map(e => e.code));
   S.plan = S.plan.filter(c => elig.has(c));
   const hrs = planHours();
-  $('cap-now').textContent = hrs; $('cap-of').textContent = t('capOf', { max: cap.max }) + ' · ' + t(S.term.toLowerCase());
+  $('cap-now').textContent = hrs; $('cap-of').textContent = t('capOf', { max: cap.max }) + ' · ' + curTermLabel();
   const fill = $('cap-fill'); fill.style.width = Math.min(100, hrs / cap.max * 100) + '%';
   fill.className = 'fill' + (hrs > cap.max ? ' over' : (cap.min && hrs < cap.min ? ' warn' : ''));
   $('cap-min').style.insetInlineStart = cap.min ? (cap.min / cap.max * 100) + '%' : '-10px';
@@ -3703,7 +3738,7 @@ function exportCsv() {
   const q = v => '"' + String(v).replace(/"/g, '""') + '"';
   const lines = [
     ['Advising sheet'], ['University', uni().name], ['Faculty', fac().name], ['Program', dept().name], ['Student email', S.session.email], ['Student ID', maskId(S.session.sid)],
-    ['Target semester', S.term], ['CGPA', A.cgpa.toFixed(2)], ['Earned hours', A.earned], ['Remaining hours', A.remaining], ['Credit cap', cap.max], ['Rule', cap.rule], [],
+    ['Target semester', S.term + (termYearFor(S.term) ? ' ' + termYearFor(S.term) : '')], ['CGPA', A.cgpa.toFixed(2)], ['Earned hours', A.earned], ['Remaining hours', A.remaining], ['Credit cap', cap.max], ['Rule', cap.rule], [],
     ['Code', 'Course', 'Credits', 'Category', 'Priority', 'Prerequisites'],
     ...planRows().map(r => [r.code, r.name, r.credits, r.category, r.priority, r.prereqs]), [], ['Total credits', planHours()]
   ];
@@ -3712,7 +3747,7 @@ function exportCsv() {
 function buildPrintSheet(cap) {
   const A = S.analysis, D = S.decision && S.decision.matches ? S.decision : null;
   $('print-sheet').setAttribute('dir', t('dir')); $('print-sheet').setAttribute('lang', LANG);
-  $('print-sheet').innerHTML = `<h1 style="font-size:20px">${esc(t('brand'))} — ${esc(t('psTitle', { term: t(S.term.toLowerCase()) }))}</h1>
+  $('print-sheet').innerHTML = `<h1 style="font-size:20px">${esc(t('brand'))} — ${esc(t('psTitle', { term: curTermLabel() }))}</h1>
     <p>${esc(uniName(uni()))} · ${esc(facName(fac()))} · ${esc(deptName(dept()))}</p>
     <p>${esc(t('psStudent', { email: S.session.email, id: maskId(S.session.sid), g: A.cgpa.toFixed(2), e: A.earned, r: A.remaining, l: A.level }))}</p>
     <p>${esc(t('psCap', { n: cap.max, rule: cap.rule }))}</p>
