@@ -12,7 +12,7 @@ The existing academic advising page **downloads a decision JSON** when an adviso
    - `BREVO_API_KEY` — your new Brevo transactional API key
    - `BREVO_SENDER_EMAIL` — your verified sender email (currently `mfibmm1@gmail.com` for testing)
    **Never put these secrets in GitHub or `supabase-config.js`.**
-4. In **Supabase → Edge Functions → Deploy a new function → Via Editor**, create **`advisor-decision-email`** and paste [index.ts](./functions/advisor-decision-email/index.ts). Deploy with JWT verification **enabled**. Alternatively use Supabase CLI: `supabase functions deploy advisor-decision-email` (with `verify_jwt=true` from `supabase/config.toml`).
+4. In **Supabase → Edge Functions → Deploy a new function → Via Editor**, create **`advisor-decision-email`** and paste [index.ts](./functions/advisor-decision-email/index.ts). In the function's **Settings**, turn **Verify JWT with legacy secret OFF**, then save. The handler still requires a valid signed-in user's JWT and independently checks the advisor/admin role using Supabase Auth. Alternatively use Supabase CLI: `supabase functions deploy advisor-decision-email` (with `verify_jwt=true` from `supabase/config.toml`).
 5. Merge this pull request to deploy its `index.html` on GitHub Pages.
 6. For an end-to-end test, use a verified registered student account, generate their plan request JSON, review it as an approved advisor, then click **Approve plan** or **Request changes** with a comment. Inspect Brevo's **Transactional → Email → Logs** and the student mailbox.
 
