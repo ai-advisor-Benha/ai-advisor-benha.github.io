@@ -63,6 +63,12 @@ h1{font-size:1.75rem;line-height:1.2} h2{font-size:1.35rem;line-height:1.25} h3{
 @media (min-width:768px){.panel-pad{padding:1.6rem}}
 .field label{display:block;font-size:.85rem;font-weight:500;margin-bottom:.3rem}
 .input,.select{width:100%;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:.6rem .7rem;font:inherit}
+.password-field{position:relative}
+.password-field > input{padding-inline-end:3.5rem}
+.password-toggle{position:absolute;inset-inline-end:.3rem;top:50%;transform:translateY(-50%);display:inline-flex;align-items:center;justify-content:center;width:2.65rem;height:2.65rem;border:0;border-radius:7px;color:var(--muted);background:transparent;cursor:pointer;touch-action:manipulation}
+.password-toggle:hover{background:var(--surface-2);color:var(--ink)}
+.password-toggle:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.password-toggle[aria-pressed="false"] .password-eye-slash{display:none}
 .input:focus,.select:focus,.btn:focus-visible,.tab:focus-visible,.chip:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:.45rem;border-radius:7px;padding:.55rem .95rem;font:inherit;font-weight:500;cursor:pointer;border:1px solid transparent;transition:background .15s}
 .btn-primary{background:var(--accent);color:var(--surface)}
@@ -224,9 +230,9 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.88rem}
           </div></div>
         <div class="field"><label for="f-email" id="l-email"></label><input class="input" id="f-email" type="email" autocomplete="email" placeholder="name@example.com"></div>
         <div class="field"><label for="f-sid" id="l-sid"></label><input class="input" id="f-sid" inputmode="numeric" autocomplete="username" maxlength="14" placeholder="14-digit ID"></div>
-        <div class="field"><label for="f-pass" id="l-pass"></label><input class="input" id="f-pass" type="password" autocomplete="current-password"></div>
-        <div class="field hidden" id="admincode-wrap"><label for="f-admincode" id="l-admincode"></label><input class="input" id="f-admincode" type="password" autocomplete="off"><p class="small muted mt-1" id="admincode-hint"></p></div>
-        <div class="field hidden" id="confirm-wrap"><label for="f-pass2" id="l-pass2"></label><input class="input" id="f-pass2" type="password" autocomplete="new-password"></div>
+        <div class="field"><label for="f-pass" id="l-pass"></label><div class="password-field"><input class="input" id="f-pass" type="password" autocomplete="current-password"><button class="password-toggle" type="button" data-password-toggle="f-pass" aria-controls="f-pass" aria-label="Show password" aria-pressed="false" title="Show password"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"></path><circle cx="12" cy="12" r="2.7"></circle><path class="password-eye-slash" d="M3 3l18 18"></path></svg></button></div></div>
+        <div class="field hidden" id="admincode-wrap"><label for="f-admincode" id="l-admincode"></label><div class="password-field"><input class="input" id="f-admincode" type="password" autocomplete="off"><button class="password-toggle" type="button" data-password-toggle="f-admincode" aria-controls="f-admincode" aria-label="Show password" aria-pressed="false" title="Show password"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"></path><circle cx="12" cy="12" r="2.7"></circle><path class="password-eye-slash" d="M3 3l18 18"></path></svg></button></div><p class="small muted mt-1" id="admincode-hint"></p></div>
+        <div class="field hidden" id="confirm-wrap"><label for="f-pass2" id="l-pass2"></label><div class="password-field"><input class="input" id="f-pass2" type="password" autocomplete="new-password"><button class="password-toggle" type="button" data-password-toggle="f-pass2" aria-controls="f-pass2" aria-label="Show password" aria-pressed="false" title="Show password"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"></path><circle cx="12" cy="12" r="2.7"></circle><path class="password-eye-slash" d="M3 3l18 18"></path></svg></button></div></div>
         <p id="login-err" class="small" style="color:var(--rose)" role="alert"></p>
         <button class="btn btn-primary w-full" type="submit" id="btn-login"></button>
         <div id="forgot-wrap" class="text-center small"><button class="btn btn-ghost btn-sm" type="button" id="btn-forgot"></button></div>
@@ -262,8 +268,8 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.88rem}
         <button id="recovery-resend" class="btn btn-ghost w-full" type="button"></button>
       </form>
       <form id="recovery-password-form" class="space-y-4 hidden" novalidate>
-        <div class="field"><label for="recovery-pass" id="l-recovery-pass"></label><input id="recovery-pass" class="input" type="password" autocomplete="new-password" minlength="10" required></div>
-        <div class="field"><label for="recovery-pass2" id="l-recovery-pass2"></label><input id="recovery-pass2" class="input" type="password" autocomplete="new-password" minlength="10" required></div>
+        <div class="field"><label for="recovery-pass" id="l-recovery-pass"></label><div class="password-field"><input id="recovery-pass" class="input" type="password" autocomplete="new-password" minlength="10" required><button class="password-toggle" type="button" data-password-toggle="recovery-pass" aria-controls="recovery-pass" aria-label="Show password" aria-pressed="false" title="Show password"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"></path><circle cx="12" cy="12" r="2.7"></circle><path class="password-eye-slash" d="M3 3l18 18"></path></svg></button></div></div>
+        <div class="field"><label for="recovery-pass2" id="l-recovery-pass2"></label><div class="password-field"><input id="recovery-pass2" class="input" type="password" autocomplete="new-password" minlength="10" required><button class="password-toggle" type="button" data-password-toggle="recovery-pass2" aria-controls="recovery-pass2" aria-label="Show password" aria-pressed="false" title="Show password"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"></path><circle cx="12" cy="12" r="2.7"></circle><path class="password-eye-slash" d="M3 3l18 18"></path></svg></button></div></div>
         <button id="recovery-complete" class="btn btn-primary w-full" type="submit"></button>
       </form>
       <p id="recovery-err" class="small mt-3" style="color:var(--rose)" role="alert"></p>
@@ -2282,8 +2288,42 @@ function updateAdminCodeField() {
   $('l-admincode').textContent = t('adminCode');
   $('admincode-hint').textContent = t('adminCodeHintFirst');
 }
+/* Accessible show/hide password controls. Password values are never logged. */
+function syncPasswordVisibilityLabels() {
+  document.querySelectorAll('button[data-password-toggle]').forEach(button => {
+    const input = document.getElementById(button.dataset.passwordToggle);
+    if (!input) return;
+    const visible = input.type === 'text';
+    const label = LANG === 'ar'
+      ? (visible ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور')
+      : (visible ? 'Hide password' : 'Show password');
+    button.setAttribute('aria-pressed', String(visible));
+    button.setAttribute('aria-label', label);
+    button.title = label;
+  });
+}
+function maskVisiblePasswords() {
+  document.querySelectorAll('button[data-password-toggle]').forEach(button => {
+    const input = document.getElementById(button.dataset.passwordToggle);
+    if (input) input.type = 'password';
+  });
+  syncPasswordVisibilityLabels();
+}
+function initializePasswordVisibility() {
+  document.querySelectorAll('button[data-password-toggle]').forEach(button => {
+    const input = document.getElementById(button.dataset.passwordToggle);
+    if (!input) return;
+    button.addEventListener('click', () => {
+      input.type = input.type === 'password' ? 'text' : 'password';
+      syncPasswordVisibilityLabels();
+    });
+  });
+  syncPasswordVisibilityLabels();
+}
+
 function setAuthMode(m) {
   authMode = m;
+  maskVisiblePasswords();
   $('tab-signin').classList.toggle('on', m === 'signin'); $('tab-signin').setAttribute('aria-selected', m === 'signin');
   $('tab-signup').classList.toggle('on', m === 'signup'); $('tab-signup').setAttribute('aria-selected', m === 'signup');
   $('confirm-wrap').classList.toggle('hidden', m !== 'signup');
@@ -2294,6 +2334,7 @@ function setAuthMode(m) {
   $('login-err').textContent = ''; $('login-err').style.color = 'var(--rose)';
 }
 function authUser(user) {
+  maskVisiblePasswords();
   S.session = { email: user.email, sid: user.sid, role: user.role,
     actualRole: user.actualRole, authUserId: user.authUserId };
   logUsage('sessions');
@@ -2406,6 +2447,7 @@ function openRecovery(email) {
   renderRecovery(); $('recovery-email').focus();
 }
 function closeRecovery() {
+  maskVisiblePasswords();
   recoveryToken = ''; $('recovery-pass').value = ''; $('recovery-pass2').value = '';
   $('recovery-card').classList.add('hidden');
   if (recoveryReturnApp && S.session) { $('auth-screen').classList.add('hidden'); $('app').classList.remove('hidden'); }
@@ -4347,6 +4389,7 @@ function buildPrintSheet(cap) {
 function setLang(l) {
   LANG = l === 'ar' ? 'ar' : 'en'; store.set('adv.lang', LANG);
   applyStaticText();
+  syncPasswordVisibilityLabels();
   $('btn-lang').setAttribute('lang', LANG === 'ar' ? 'en' : 'ar'); $('btn-lang-auth').setAttribute('lang', LANG === 'ar' ? 'en' : 'ar');
   if (pendingOtp) $('otp-sub').textContent = t('signupEmailHint', { email: pendingOtp.email });
   const roleSel = (document.querySelector('input[name="role"]:checked') || {}).value;
@@ -4431,6 +4474,7 @@ function templateRows() {
    9. EVENTS
    ===================================================================== */
 function bind() {
+  initializePasswordVisibility();
   $('tab-signin').onclick = () => setAuthMode('signin'); $('tab-signup').onclick = () => setAuthMode('signup');
   $('login-form').addEventListener('submit', submitLogin); $('otp-form').addEventListener('submit', verifyOtp);
   $('btn-back').onclick = () => { pendingOtp = null; $('otp-card').classList.add('hidden'); $('login-card').classList.remove('hidden'); };
