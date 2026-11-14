@@ -18,10 +18,24 @@ async function digest(s:string):Promise<string>{
  const a=new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)));
  return [...a].map(n=>n.toString(16).padStart(2,'0')).join('');
 }
-function secretKey():string{
- const old=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
- if(old)return old;
- try{return JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS')||'{}').default||'';}catch{return '';}
+function namedKey(envName:string):string{
+ try {
+   const keys=JSON.parse(Deno.env.get(envName)||'{}');
+   return typeof keys.default==='string' ? keys.default : '';
+ } catch { return ''; }
+}
+function secretKey():string {
+ // Prefer the current server-only API key. Legacy service-role is a fallback.
+ return namedKey('SUPABASE_SECRET_KEYS') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+}
+function publishableKey():string {
+ // Used for the signed-in user's RLS-scoped profile lookup, not privileged operations.
+ return namedKey('SUPABASE_PUBLISHABLE_KEYS') || Deno.env.get('SUPABASE_ANON_KEY') || '';
+}
+function reportDatabaseError(stage:string,error:unknown):void{
+ const e=error as {code?:string,message?:string,hint?:string};
+ // Logs contain database error codes and hints only, never API keys, JWTs or passwords.
+ console.error('advisor-decision-email database failure', {stage,code:e?.code,message:e?.message,hint:e?.hint});
 }
 Deno.serve(async(req:Request)=>{
  if(req.method==='OPTIONS')return reply(200,{ok:true});
@@ -29,16 +43,28 @@ Deno.serve(async(req:Request)=>{
  const match=/^Bearer\s+(\S+)$/i.exec(req.headers.get('authorization')||'');
  if(!match)return reply(401,{error:'Sign in as advisor or administrator first.'});
  const url=Deno.env.get('SUPABASE_URL')||'';
- const key=secretKey(),brevo=Deno.env.get('BREVO_API_KEY')||'';
+ const key=secretKey(),publicKey=publishableKey(),brevo=Deno.env.get('BREVO_API_KEY')||'';
  const from=Deno.env.get('BREVO_SENDER_EMAIL')||'';
- if(!url||!key||!brevo||!from)return reply(503,{error:'Configure BREVO_API_KEY and BREVO_SENDER_EMAIL in Supabase Edge Function Secrets.'});
+ if(!url||!key||!publicKey||!brevo||!from)
+   return reply(503,{error:'Supabase API keys or Brevo email secrets are not configured for this function.'});
+ // Two clients with deliberately different privileges:
+ // - caller: signed-in user JWT; RLS enforces access to their own advisor profile.
+ // - sb: server-only admin client used only after caller's role is verified.
+ const caller=createClient(url,publicKey,{
+   global:{headers:{Authorization:'Bearer '+match[1]}},
+   auth:{persistSession:false,autoRefreshToken:false}
+ });
  const sb=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
  try{
-   const auth=await sb.auth.getUser(match[1]);
+   const auth=await caller.auth.getUser(match[1]);
    const user=auth.data.user;
    if(auth.error||!user)fail('Your login session has expired.',401);
-   const {data:actor,error:actorErr}=await sb.from('advisor_profiles').select('id,email,role').eq('id',user.id).maybeSingle();
-   if(actorErr)fail('Unable to verify advisor account.',503);
+   const {data:actor,error:actorErr}=await caller.from('advisor_profiles')
+     .select('id,email,role').eq('id',user.id).maybeSingle();
+   if(actorErr){
+     reportDatabaseError('caller-profile-lookup',actorErr);
+     fail('Unable to read your advisor profile. Check the Supabase function logs for the database error.',503);
+   }
    if(!actor||!['advisor','admin'].includes(actor.role))fail('Advisor or administrator role required.',403);
    const raw=await req.text();
    if(raw.length>15000)fail('Request too large.',413);
@@ -62,7 +88,7 @@ Deno.serve(async(req:Request)=>{
    // Never send to an arbitrary address read from an uploaded JSON document.
    const {data:recipient,error:recErr}=await sb.from('advisor_profiles')
      .select('id,email,sid,role').eq('email',email).maybeSingle();
-   if(recErr)fail('Unable to look up registered student.',503);
+   if(recErr){reportDatabaseError('recipient-lookup',recErr);fail('Unable to look up registered student; see function logs.',503);}
    if(!recipient)fail('Student email is not registered in the system.',404);
    const demo=r.demo===true;
    const actorEmail=String(actor.email||'').toLowerCase();
@@ -78,7 +104,7 @@ Deno.serve(async(req:Request)=>{
    const q=sb.from(TABLE).select('id,status,created_at').eq('advisor_id',actor.id)
      .eq('recipient_id',recipient.id).eq('fingerprint',fp).eq('content_hash',contentHash);
    const prev=await q.maybeSingle();
-   if(prev.error)fail('Create the advisor_decision_email_log database table before sending.',503);
+   if(prev.error){reportDatabaseError('email-log-lookup',prev.error);fail('Unable to access the email notification log table; see function logs.',503);}
    if(prev.data?.status==='sent')return reply(200,{ok:true,recipient:email,duplicate:true});
    if(prev.data?.status==='pending')fail('Email already being processed; do not resend.',409);
    if(prev.data?.status==='failed'){
