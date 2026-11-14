@@ -310,6 +310,8 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.88rem}
         <span class="chip" id="hdr-email"></span>
         <span class="chip" id="hdr-sid"></span>
         <span class="chip hidden" id="hdr-role"></span>
+        <label for="admin-role-switch" id="admin-role-switch-label" class="small hidden" style="color:var(--navy-ink)">Switch level:</label>
+        <select id="admin-role-switch" class="select hidden" style="width:auto;min-width:145px;padding:.35rem .5rem" aria-label="Switch interface level"></select>
         <button class="btn btn-sm hidden" style="background:rgba(255,255,255,.12);color:var(--navy-ink)" id="btn-ws" type="button"></button>
         <button class="btn btn-sm" style="background:rgba(255,255,255,.12);color:var(--navy-ink)" id="btn-lang" type="button" lang="ar"></button>
         <button class="btn btn-sm" style="background:rgba(255,255,255,.12);color:var(--navy-ink)" id="btn-guide" type="button"></button>
@@ -2060,7 +2062,9 @@ function creditCap(analysis, rules, opts) {
 
 /* =====================================================================
    7. AUTHENTICATION — server-backed, email-verified and bilingual.
-   Codes, password hashes, roles, and sessions never live in localStorage.
+   Codes, password hashes, account roles, and sessions never live in localStorage.
+   An admin-only interface preference may be stored in sessionStorage; the
+   actual account role is checked on Supabase, never granted by the UI.
    ===================================================================== */
 let authMode = 'signin', pendingOtp = null, recoveryStage = 'request';
 let recoveryEmail = '', recoveryToken = '', recoveryReturnApp = false;
@@ -2096,6 +2100,16 @@ async function accountProfile(user) {
   checkSupabase(error);
   if (!data) throw new Error('Account profile not found. Run setup.sql in Supabase SQL Editor before registering.');
   return data;
+}
+// An administrator can choose a UI level. This is a DISPLAY preference only.
+// The real, privileged role always comes from the Supabase profile and RLS.
+const LEVELS = ['student', 'advisor', 'admin'];
+const levelPreferenceKey = id => 'adv.interfaceLevel.' + id;
+function profileForInterface(profile, userId, requestedLevel) {
+  const actualRole = profile.role;
+  const level = actualRole === 'admin' && LEVELS.includes(requestedLevel)
+    ? requestedLevel : actualRole;
+  return { ...profile, role: level, actualRole, authUserId: userId };
 }
 async function apiRequest(route, body) {
   const sb = client();
@@ -2136,16 +2150,22 @@ async function apiRequest(route, body) {
       let p;
       try { p = await accountProfile(r.data.user); }
       catch (e) { await sb.auth.signOut(); throw e; }
-      if (p.sid !== body.sid || p.role !== body.role) {
+      if (p.sid !== body.sid || (p.role !== body.role && p.role !== 'admin')) {
         await sb.auth.signOut();
         throw new Error('Email, ID or selected role does not match the account.');
       }
-      return { user: p };
+      // Only a database-approved admin may log into any of the three UI modes.
+      if (p.role === 'admin') sessionStorage.setItem(levelPreferenceKey(r.data.user.id), body.role);
+      return { user: profileForInterface(p, r.data.user.id, body.role) };
     }
     case '/api/auth/me': {
       r = await sb.auth.getUser();
       if (r.error || !r.data.user) return { user: null };
-      return { user: await accountProfile(r.data.user) };
+      const p = await accountProfile(r.data.user);
+      const chosen = p.role === 'admin'
+        ? sessionStorage.getItem(levelPreferenceKey(r.data.user.id)) || 'admin'
+        : p.role;
+      return { user: profileForInterface(p, r.data.user.id, chosen) };
     }
     case '/api/auth/logout': {
       r = await sb.auth.signOut();
@@ -2217,7 +2237,8 @@ function setAuthMode(m) {
   $('login-err').textContent = ''; $('login-err').style.color = 'var(--rose)';
 }
 function authUser(user) {
-  S.session = { email: user.email, sid: user.sid, role: user.role };
+  S.session = { email: user.email, sid: user.sid, role: user.role,
+    actualRole: user.actualRole, authUserId: user.authUserId };
   logUsage('sessions');
   $('recovery-card').classList.add('hidden'); $('otp-card').classList.add('hidden');
   enterApp();
@@ -2447,8 +2468,25 @@ function applyStaticText() {
   setAuthMode(authMode);
 }
 
+function renderAdminLevelSwitcher() {
+  const allowed = !!S.session && S.session.actualRole === 'admin';
+  $('admin-role-switch').classList.toggle('hidden', !allowed);
+  $('admin-role-switch-label').classList.toggle('hidden', !allowed);
+  if (!allowed) return;
+  $('admin-role-switch-label').textContent = LANG === 'ar' ? 'تبديل الواجهة:' : 'Switch level:';
+  const sel = $('admin-role-switch');
+  sel.replaceChildren(...LEVELS.map(role => new Option(roleLabel(role), role)));
+  sel.value = S.session.role;
+}
+function switchAdminLevel(level) {
+  if (!S.session || S.session.actualRole !== 'admin' || !LEVELS.includes(level)) return;
+  sessionStorage.setItem(levelPreferenceKey(S.session.authUserId), level);
+  S.session.role = level;
+  enterApp();
+}
 function enterApp() {
   $('auth-screen').classList.add('hidden'); $('app').classList.remove('hidden');
+  renderAdminLevelSwitcher();
   $('hdr-email').textContent = S.session.email; $('hdr-sid').textContent = 'ID ' + maskId(S.session.sid);
   const isAdv = S.session.role === 'advisor' || S.session.role === 'admin';
   $('hdr-role').classList.toggle('hidden', !isAdv); $('hdr-role').textContent = roleLabel(S.session.role);
@@ -4110,6 +4148,7 @@ function setLang(l) {
   if (roleSel === 'advisor' || roleSel === 'admin') $('l-sid').textContent = t('staffId');
   updateAdminCodeField();
   if (S.session) {
+    renderAdminLevelSwitcher();
     $('hdr-role').textContent = roleLabel(S.session.role); $('btn-ws').textContent = t(S.advisorView ? 'wsStudent' : S.session.role === 'admin' ? 'admWs' : 'wsAdvisor');
     if (S.advisorView) { $('ws-title').textContent = t(S.session.role === 'admin' ? 'admTitle' : 'wsTitle'); $('ws-sub').textContent = t(S.session.role === 'admin' ? 'admSub' : 'wsSub'); renderAdminPanel(); }
     renderUniSelect(); updateHeader(); renderStudentCard(); renderDeadlines();
@@ -4229,6 +4268,7 @@ function bind() {
     $('l-sid').textContent = t(v === 'student' ? 'studentId' : 'staffId'); $('login-err').textContent = ''; updateAdminCodeField();
   }));
   $('btn-ws').onclick = () => showWorkspace(!S.advisorView);
+  $('admin-role-switch').onchange = e => switchAdminLevel(e.target.value);
   $('admin-panel').addEventListener('click', e => { const b = e.target.closest('[data-adm]'); if (b) adminAction(b); });
   $('in-req').onchange = e => { if (e.target.files[0]) loadRequestFile(e.target.files[0]); e.target.value = ''; };
   $('adv-review').addEventListener('click', e => { const b = e.target.closest('[data-decide]'); if (b) decide(b.dataset.decide); });
