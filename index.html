@@ -685,6 +685,9 @@ const I18N = {
     qaLinkSub: 'The AI assistant runs on Claude.', qaLinkBody: 'On this website the AI assistant is not connected yet. If you have a Claude account, you can ask your questions in the Claude version of this same system.',
     qaLinkSteps: ['Press “Open the Claude version” (it opens in a new tab).', 'Sign in to Claude if you are asked.', 'Choose your program and upload your Ibn Al-Haytham transcript there again — your data on this website is not transferred.', 'Press “Ask the bylaw” and ask in Arabic or English.'],
     qaLinkBtn: 'Open the Claude version', qaLinkNote: 'No Claude account? Every other part of the system works fully here; ask your academic advisor for anything else.',
+    qaSigninBody: 'To use the AI assistant, sign in to your own Claude account. Answers then use your account, not anyone else\'s.',
+    qaSigninSteps: ['Press “Sign in to Claude” (it opens in a new tab) and sign in, or create an account.', 'Come back to this tab and reload the page.', 'Upload your transcript again, press “Ask the bylaw” and allow Claude when it asks for your permission.'],
+    qaSigninBtn: 'Sign in to Claude',
     langBtn: 'العربية',
     errStaff: 'Staff ID must be 4–14 digits.', errRole: 'This account is registered as {r}. Choose that role to sign in.',
     role: 'I am signing in as', roleStudent: 'Student', roleAdvisor: 'Academic advisor', staffId: 'Staff ID',
@@ -933,6 +936,9 @@ I18N.ar = {
   qaLinkSub: 'يعمل مساعد اللائحة باستخدام Claude.', qaLinkBody: 'مساعد الذكاء الاصطناعي غير متصل على هذا الموقع حتى الآن. إذا كان لديك حساب Claude يمكنك طرح أسئلتك في نسخة Claude من نفس النظام.',
   qaLinkSteps: ['اضغط «فتح نسخة Claude» (تفتح في علامة تبويب جديدة).', 'سجّل الدخول إلى Claude إذا طُلب منك.', 'اختر برنامجك وارفع بيان حالتك من ابن الهيثم هناك مرة أخرى — بياناتك على هذا الموقع لا تنتقل.', 'اضغط «اسأل عن اللائحة» واسأل بالعربية أو الإنجليزية.'],
   qaLinkBtn: 'فتح نسخة Claude', qaLinkNote: 'ليس لديك حساب Claude؟ كل أجزاء النظام الأخرى تعمل هنا بالكامل؛ واسأل مرشدك الأكاديمي عن أي شيء آخر.',
+  qaSigninBody: 'لاستخدام مساعد الذكاء الاصطناعي سجّل الدخول إلى حساب Claude الخاص بك. تُستخدم حينها حسابك أنت وليس حساب أي شخص آخر.',
+  qaSigninSteps: ['اضغط «تسجيل الدخول إلى Claude» (يفتح في علامة تبويب جديدة) وسجّل الدخول أو أنشئ حسابًا.', 'ارجع إلى هذه الصفحة وأعد تحميلها.', 'ارفع بيان حالتك مرة أخرى، واضغط «اسأل عن اللائحة»، ووافق عندما يطلب Claude إذنك.'],
+  qaSigninBtn: 'تسجيل الدخول إلى Claude',
   langBtn: 'English',
   errStaff: 'يجب أن يتكون الرقم الوظيفي من 4 إلى 14 رقمًا.', errRole: 'هذا الحساب مسجّل بصفة {r}. اختر هذه الصفة لتسجيل الدخول.',
   role: 'أسجّل الدخول بصفتي', roleStudent: 'طالب', roleAdvisor: 'مرشد أكاديمي', staffId: 'الرقم الوظيفي',
@@ -3382,7 +3388,8 @@ const CLAUDE_VERSION_URL = 'https://claude.ai/artifact/4PxtkJ7WqkK1BvuHFdYtKa';
     if (window.claude && window.claude.use) sampleCap = await window.claude.use('sample');
   } catch (e) { sampleCap = null; }
   if (sampleCap || typeof window.ADVISOR_AI === 'function') $('qa-fab').classList.remove('hidden');
-  else if (!window.claude) { qaLinkMode = true; $('qa-fab').classList.remove('hidden'); }   // standalone website: offer the Claude version
+  else if (!window.claude) { qaLinkMode = 'website'; $('qa-fab').classList.remove('hidden'); }   // standalone website: offer the Claude version
+  else { qaLinkMode = 'signin'; $('qa-fab').classList.remove('hidden'); }                           // Claude version, visitor not signed in / no access: offer sign-in
 })();
 
 /* ---- helpers used by the tools ---- */
@@ -3920,9 +3927,10 @@ function bind() {
     $('qa').classList.remove('hidden');
     $('qa-form').classList.toggle('hidden', qaLinkMode); $('qa-examples').classList.toggle('hidden', qaLinkMode);
     if (qaLinkMode) {
+      const site = qaLinkMode === 'website';
       $('qa-sub').textContent = t('qaLinkSub');
-      $('qa-log').innerHTML = `<div class="space-y-3"><p>${esc(t('qaLinkBody'))}</p><ol class="list-decimal ps-5 space-y-1 small">${t('qaLinkSteps').map(s => `<li>${esc(s)}</li>`).join('')}</ol>
-        <a class="btn btn-primary" href="${CLAUDE_VERSION_URL}" target="_blank" rel="noopener">${esc(t('qaLinkBtn'))}</a>
+      $('qa-log').innerHTML = `<div class="space-y-3"><p>${esc(t(site ? 'qaLinkBody' : 'qaSigninBody'))}</p><ol class="list-decimal ps-5 space-y-1 small">${t(site ? 'qaLinkSteps' : 'qaSigninSteps').map(s => `<li>${esc(s)}</li>`).join('')}</ol>
+        <a class="btn btn-primary" href="${site ? CLAUDE_VERSION_URL : 'https://claude.ai/login'}" target="_blank" rel="noopener">${esc(t(site ? 'qaLinkBtn' : 'qaSigninBtn'))}</a>
         <p class="small muted">${esc(t('qaLinkNote'))}</p></div>`;
       return;
     }
