@@ -1,0 +1,2 @@
+[functions.advisor-decision-email]
+verify_jwt = true
