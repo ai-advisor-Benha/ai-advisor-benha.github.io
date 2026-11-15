@@ -2,6 +2,20 @@
 
 **Status:** Pull-request implementation; **NOT LIVE** until the database migration is reviewed/applied and the frontend is merged and tested.
 
+## Current Supabase deployment status — 15 November 2026
+
+The **AI-Advisor-Benha** production Supabase project (`nhaqqqnszzlyebgvjxaf`) has been updated through its authorized connector:
+
+- Migration `advisor_online_inbox_20261115` successfully applied. Four new RLS-protected tables and four protected RPCs are installed.
+- Migration `advisor_notification_service_privileges_20261115` successfully applied. The Edge Function's service role received narrowly scoped database permissions.
+- `advisor-request-notify` Edge Function **version 2** is active, with in-function JWT validation. The previous `advisor-decision-email` function remains active and unchanged.
+- Transactional synthetic checks passed for advisor-code creation, student assignment, idempotent pending requests, student decision denial, approval storage, and RLS visibility for student, advisor and unrelated user. Every synthetic test transaction was **rolled back**.
+- Existing Supabase Auth user count and original `advisor_profiles` data were preserved; no test users or test approvals remain.
+- The existing decision-email log records two prior `sent` messages; this is *not* evidence that the **new** request email has been delivered.
+- **Not yet tested with real end-user identities:** sign-up email verification, live browser uploads, real Brevo request notifications, actual advisor/student mail delivery, and load testing with 7,000 students. These require verified pilot accounts and should be assessed before mass deployment.
+
+**Do not re-apply already recorded migrations blindly.** Review Supabase's migration history first. Separate deployment steps below describe how to reproduce the system in another environment, and remain useful as a runbook.
+
 ## Purpose
 
 Replace the mandatory manual handoff of student approval-request JSON with a secure, persistent student-to-assigned-advisor queue. Preserve the downloadable JSON backup, existing deterministic academic-rule checks, original staff/student role separation and existing Brevo notification service.
