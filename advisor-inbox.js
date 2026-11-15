@@ -6,11 +6,22 @@
   let inbox = [], requests = [], assignments = [], inboxPage = 0, inboxCount = 0;
   let advisorError = '', studentError = '', adminError = '', assignmentMessage = '';
   let busySubmit = false, refreshTimer = null, bound = false;
+  let pendingCodeRequest = null, advisorCode = '', advisorCodeError = '', noticeWarning = '';
+  let advisorFilter = 'pending';
   const pageSize = 50;
   const dict = {
     en: {
       title: 'Requests sent to your academic advisor', refresh:'Refresh status',
       studentEmpty:'No online approval requests yet.',
+      needCode:'Your academic advisor has not been linked yet. Enter the unique code provided by the advisor to send this plan.',
+      codeLabel:'Academic advisor code',codePlaceholder:'ADV-XXXXXXXXXXXXXXXXXXXXXXXX',
+      codeButton:'Assign my advisor & submit',codeChanged:'Your plan changed. Click Send for approval again.',
+      codeIncorrect:'Please enter an advisor code in the format ADV- followed by 24 letters/numbers (A–F and 0–9).',
+      notificationsFailed:'Request saved, but the advisor email notification was not sent: ',
+      pendingTitle:'Pending approval',myAdvisorCode:'Your unique academic advisor code',
+      myAdvisorCodeHint:'Share this code only with students assigned to you. They enter it once when submitting their first request.',
+      copyCode:'Copy code',codeUnavailable:'Advisor code could not be loaded: ',
+      filterLabel:'Filter requests',allFilter:'All requests', 
       sending:'Submitting to your assigned advisor…',
       sent:'Request saved in your advisor’s online inbox. Keep the downloaded JSON as backup.',
       backup:'The JSON was downloaded, but online submission did not succeed: ',
@@ -20,7 +31,7 @@
       advisorSub:'Only students assigned to your verified advisor account appear here. Refresh or log in again to check new requests.',
       advisorEmpty:'No requests assigned to you yet.',
       open:'Review request', next:'Next', prev:'Previous', recent:'Showing {start}–{end} of {total}',
-      pending:'Pending', approved:'Approved', changes:'Changes requested',
+      pending:'Pending approval', approved:'Approved', changes:'Changes requested',
       columns:['Student','Semester','Status','Submitted','Action'],
       reviewed:'This request has already been reviewed. It cannot be decided twice.',
       adminTitle:'Assign students to academic advisors',
@@ -29,13 +40,22 @@
       assignmentSaved:'Assignment saved. Future submissions will reach the selected advisor.',
       adminEmpty:'No assignments created yet.',
       assignmentColumns:['Student','Assigned advisor','Assigned on'],
-      manual:'If no advisor is assigned or the service is unavailable, use the downloaded request JSON.',
+      manual:'If the online service is unavailable, the downloadable JSON remains available for manual review.',
       onlineSaved:'The decision has been saved to the student’s online account.',
       onlineFail:'Could not save online decision (JSON backup downloaded): '
     },
     ar: {
       title:'الطلبات المرسلة إلى المرشد الأكاديمي', refresh:'تحديث الحالة',
       studentEmpty:'لا توجد طلبات اعتماد إلكترونية حتى الآن.',
+      needCode:'لم يتم ربطك بمرشد أكاديمي. أدخل الكود الفريد الذي حصلت عليه من المرشد لإرسال خطتك.',
+      codeLabel:'كود المرشد الأكاديمي',codePlaceholder:'ADV-XXXXXXXXXXXXXXXXXXXXXXXX',
+      codeButton:'تعيين المرشد وإرسال الطلب',codeChanged:'تم تعديل الخطة. اضغط إرسال للاعتماد مرة أخرى.',
+      codeIncorrect:'أدخل كود المرشد بصيغة ADV- متبوعًا بـ24 حرفًا/رقمًا (A–F و0–9).',
+      notificationsFailed:'تم حفظ الطلب، لكن تعذّر إرسال إشعار البريد للمرشد: ',
+      pendingTitle:'في انتظار الموافقة',myAdvisorCode:'الكود الفريد للمرشد الأكاديمي',
+      myAdvisorCodeHint:'شارك الكود فقط مع الطلاب المسندين إليك. يدخل الطالب الكود مرة واحدة عند إرسال أول طلب.',
+      copyCode:'نسخ الكود',codeUnavailable:'تعذّر تحميل كود المرشد: ',
+      filterLabel:'تصفية الطلبات',allFilter:'كل الطلبات',
       sending:'جارٍ إرسال الطلب إلى المرشد المكلف…',
       sent:'تم حفظ الطلب في صندوق المرشد الأكاديمي. احتفظ بملف JSON كنسخة احتياطية.',
       backup:'تم تنزيل ملف JSON ولكن تعذر الإرسال الإلكتروني: ',
@@ -45,7 +65,7 @@
       advisorSub:'تظهر هنا طلبات الطلاب المسندين إلى حساب المرشد فقط. حدّث أو سجّل الدخول لعرض الجديد.',
       advisorEmpty:'لا توجد طلبات مكلف بها حتى الآن.',
       open:'مراجعة الطلب', next:'التالي', prev:'السابق', recent:'عرض {start}–{end} من {total}',
-      pending:'قيد المراجعة', approved:'موافق عليه', changes:'مطلوب تعديل',
+      pending:'في انتظار الموافقة', approved:'تمت الموافقة', changes:'مطلوب تعديل',
       columns:['الطالب','الفصل','الحالة','تاريخ الإرسال','إجراء'],
       reviewed:'تمت مراجعة الطلب بالفعل ولا يمكن اعتماده مرتين.',
       adminTitle:'إسناد الطلاب إلى المرشدين الأكاديميين',
@@ -54,7 +74,7 @@
       assignmentSaved:'تم حفظ الإسناد وستصل الطلبات الجديدة إلى المرشد المحدد.',
       adminEmpty:'لا توجد تعيينات حتى الآن.',
       assignmentColumns:['الطالب','المرشد المكلف','تاريخ الإسناد'],
-      manual:'عند غياب المرشد المكلف أو الخدمة، استخدم ملف الطلب JSON الذي تم تنزيله.',
+      manual:'عند تعذّر الخدمة الإلكترونية، يظل ملف JSON متاحًا للإرسال اليدوي.',
       onlineSaved:'تم حفظ القرار في حساب الطالب الإلكتروني.',
       onlineFail:'تعذر حفظ القرار الإلكتروني (تم تنزيل نسخة JSON): '
     }
