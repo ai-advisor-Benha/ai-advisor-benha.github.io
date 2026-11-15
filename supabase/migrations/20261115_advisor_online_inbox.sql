@@ -44,6 +44,24 @@ create table if not exists public.advisor_plan_requests (
   constraint advisor_plan_decision_object check (decision is null or jsonb_typeof(decision) = 'object')
 );
 
+-- Internal idempotent delivery log for new-request advisor emails.
+-- No browser access. Email failure must never remove a student's saved request.
+create table if not exists public.advisor_request_notice_log (
+  request_id uuid primary key references public.advisor_plan_requests(id) on delete cascade,
+  student_id uuid not null references auth.users(id) on delete cascade,
+  advisor_id uuid not null references auth.users(id) on delete cascade,
+  status text not null check (status in ('pending','sent','failed')),
+  attempts integer not null default 1 check (attempts between 1 and 3),
+  created_at timestamptz not null default now(),
+  sent_at timestamptz,
+  message_id text,
+  error_message text
+);
+create index if not exists advisor_request_notice_recent
+  on public.advisor_request_notice_log(student_id,created_at desc);
+alter table public.advisor_request_notice_log enable row level security;
+revoke all on public.advisor_request_notice_log from public, anon, authenticated;
+
 -- Prevent duplicate PENDING requests without rewriting an advisor's saved decision.
 create unique index if not exists advisor_plan_one_pending
   on public.advisor_plan_requests (student_id, fingerprint)
