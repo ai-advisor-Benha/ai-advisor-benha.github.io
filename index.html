@@ -339,6 +339,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.88rem}
     </section>
 
     <div id="student-flow" class="space-y-6">
+    <div id="student-online-requests" class="hidden" aria-live="polite"></div>
     <section id="admin-demo-panel" class="panel panel-pad hidden" aria-label="Administrator student demonstration">
       <label class="flex gap-2 items-center" for="admin-demo-toggle"><input type="checkbox" id="admin-demo-toggle"><strong id="admin-demo-title"></strong></label>
       <p class="small muted mt-2" id="admin-demo-description"></p>
@@ -454,7 +455,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.88rem}
         <div class="flex flex-wrap justify-between gap-3 items-center"><div><h3 id="ap-title"></h3><p class="small muted" id="ap-sub"></p></div>
           <div class="flex gap-2 flex-wrap"><button class="btn btn-primary btn-sm" id="btn-send-ap" type="button"></button><label class="btn btn-ghost btn-sm" tabindex="0" id="l-load-dec"><input type="file" accept=".json,application/json" class="hidden" id="in-dec"><span id="t-load-dec"></span></label></div></div>
         <div id="decision-box"></div>
-        <div id="student-online-requests" class="mt-3 hidden" aria-live="polite"></div>
+        
       </div>
       <div class="panel panel-pad space-y-2" id="ibn-box"></div>
       <div class="grid lg:grid-cols-2 gap-5">
