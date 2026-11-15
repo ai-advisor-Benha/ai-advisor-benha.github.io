@@ -217,5 +217,5 @@
       if(act==='view')void view(id);
     });
   }
-  window.AdvisorRoster={bind,onWorkspace,refresh};
+  window.AdvisorRoster={bind,onWorkspace,refresh,parseOfficialRoster:parseFile};
 })();
