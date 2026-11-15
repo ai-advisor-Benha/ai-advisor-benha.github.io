@@ -3,8 +3,6 @@
 -- This migration does not change existing authentication, role or email tables.
 -- The GitHub frontend update alone cannot install this migration.
 
-begin;
-
 create table if not exists public.advisor_student_assignments (
   student_id uuid primary key references public.advisor_profiles(id) on delete cascade,
   advisor_id uuid not null references public.advisor_profiles(id) on delete restrict,
@@ -351,4 +349,7 @@ grant execute on function public.advisor_assign_student(text,text) to authentica
 grant execute on function public.advisor_submit_plan(jsonb,text) to authenticated;
 grant execute on function public.advisor_save_plan_decision(uuid,jsonb) to authenticated;
 
-commit;
+
+-- Existing automatic-RLS event trigger does not need to be callable via the Data API.
+-- Revoke a previously flagged privilege without changing the event trigger itself.
+revoke execute on function public.rls_auto_enable() from public, anon, authenticated;
