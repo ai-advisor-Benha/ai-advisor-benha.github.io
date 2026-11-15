@@ -60,14 +60,14 @@ function app(role, {
 const request={
   type:'ai-academic-advisor/request',version:1,studentId:'12345678901234',
   email:'student@example.edu',program:'cs',term:'Spring',
-  fingerprint:'f'.repeat(16),plan:['CS101'],attempts:[]
+  fingerprint:'f'.repeat(16),studentNumber:'99912345',studentName:'طالب اختبار تجريبي كامل',plan:['CS101'],attempts:[]
 };
 
 test('student submission invokes the authenticated online RPC', async()=>{
   const x=app('student',{rows:[{term:'Spring',program:'cs',status:'pending',created_at:'2026-11-15T00:00:00Z'}]});
   assert.equal(await x.api.submit(request),true);
-  assert.ok(x.calls.some(([kind,name])=>kind==='rpc'&&name==='advisor_submit_plan'));
-  assert.match(x.elements.get('student-online-requests').innerHTML,/Request saved/);
+  assert.ok(x.calls.some(([kind,name])=>kind==='rpc'&&name==='advisor_submit_verified_plan'));
+  assert.match(x.elements.get('student-online-requests').innerHTML,/Request matched/);
 });
 
 test('offline or unassigned student retains the downloadable-JSON fallback message',async()=>{
@@ -101,25 +101,27 @@ test('admin assignment panel exposes email-based assignment form',async()=>{
   assert.match(x.elements.get('admin-advisor-assignments').innerHTML,/assign-student-email/);
 });
 
-test('new student is prompted for advisor code without creating an assignment prematurely',async()=>{
+test('new student is matched automatically without advisor email or code',async()=>{
   const x=app('student',{assigned:false});
-  assert.equal(await x.api.submit(request),false);
-  assert.match(x.elements.get('student-online-requests').innerHTML,/student-advisor-code-form/);
-  assert.ok(!x.calls.some(([kind,name])=>kind==='rpc'&&name==='advisor_submit_plan'));
-});
-
-test('first-time valid code registers an advisor and sends the online request',async()=>{
-  const x=app('student',{assigned:false});
-  assert.equal(await x.api.submit(request),false);
-  assert.equal(await x.api.submit(request,'ADV-'+'A'.repeat(24)),true);
-  const item=x.calls.find(([kind,name])=>kind==='rpc'&&name==='advisor_submit_plan');
-  assert.equal(item[2].p_advisor_code,'ADV-'+'A'.repeat(24));
+  assert.equal(await x.api.submit(request),true);
+  const item=x.calls.find(([kind,name])=>kind==='rpc'&&name==='advisor_submit_verified_plan');
+  assert.ok(item);
+  assert.equal(item[2].p_request.studentNumber,'99912345');
+  assert.equal(item[2].p_advisor_code,undefined);
+  assert.ok(!x.elements.get('student-online-requests').innerHTML.includes('student-advisor-code-form'));
   assert.ok(x.calls.some(([kind,name])=>kind==='invoke'&&name==='advisor-request-notify'));
 });
 
-test('invalid code does not invoke the server-side assignment RPC',async()=>{
+test('student cannot submit without matching an approved official roster',async()=>{
+  const x=app('student',{assigned:false,rpcError:'not found in any approved academic advisor roster'});
+  assert.equal(await x.api.submit(request),false);
+  assert.match(x.elements.get('student-online-requests').innerHTML,/approved academic advisor roster/);
+});
+
+test('manually entered legacy code does not replace official roster matching',async()=>{
   const x=app('student',{assigned:false});
-  assert.equal(await x.api.submit(request,'123'),false);
+  assert.equal(await x.api.submit(request,'ADV-'+'A'.repeat(24)),true);
+  assert.ok(x.calls.some(([kind,name])=>kind==='rpc'&&name==='advisor_submit_verified_plan'));
   assert.ok(!x.calls.some(([kind,name])=>kind==='rpc'&&name==='advisor_submit_plan'));
 });
 
