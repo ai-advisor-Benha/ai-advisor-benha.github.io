@@ -247,7 +247,7 @@ begin
   end if;
   if v_number !~ '^[0-9]{5,20}$' or length(v_name)<5 then
     raise exception 'Your uploaded Ibn Al-Haytham transcript must contain your university student code and full name.'; end if;
-  select count(distinct b.advisor_id), min(b.advisor_id)
+  select count(distinct b.advisor_id), min(b.advisor_id::text)::uuid
     into v_nmatches,v_matched_advisor
   from public.advisor_roster_students item
   join public.advisor_roster_batches b on b.id=item.batch_id
