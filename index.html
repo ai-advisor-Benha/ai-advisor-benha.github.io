@@ -4424,6 +4424,8 @@ function setLang(l) {
     if (S.advisorView) { $('ws-title').textContent = t(S.session.role === 'admin' ? 'admTitle' : 'wsTitle'); $('ws-sub').textContent = t(S.session.role === 'admin' ? 'admSub' : 'wsSub'); renderAdminPanel(); }
     renderUniSelect(); updateHeader(); renderStudentCard(); renderDeadlines();
     if (S.advisorView) renderAdvisorWS(); else showStep(S.step);
+    window.AdvisorInbox?.renderAdvisor();
+    window.AdvisorInbox?.renderStudent();
   }
   if (!$('tour').classList.contains('hidden')) renderTour();
   if (!$('qa').classList.contains('hidden')) renderQA(false);
