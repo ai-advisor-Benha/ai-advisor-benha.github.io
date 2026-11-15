@@ -1,6 +1,6 @@
 # Online Academic Advisor Inbox — Installation and Acceptance Plan
 
-**Status:** Pull-request implementation; **NOT LIVE** until the database migration is reviewed/applied and the frontend is merged and tested.
+**Status (15 November 2026):** The Supabase migrations are installed, both Edge Functions are active, and Pull Request #6 was merged into `main`. GitHub Pages propagation and real-account/browser/email-delivery testing have not been independently verified; do a small faculty pilot before university-wide rollout.
 
 ## Current Supabase deployment status — 15 November 2026
 
@@ -8,6 +8,7 @@ The **AI-Advisor-Benha** production Supabase project (`nhaqqqnszzlyebgvjxaf`) ha
 
 - Migration `advisor_online_inbox_20261115` successfully applied. Four new RLS-protected tables and four protected RPCs are installed.
 - Migration `advisor_notification_service_privileges_20261115` successfully applied. The Edge Function's service role received narrowly scoped database permissions.
+- Migration `advisor_inbox_performance_indexes_20261115` applied to index relevant assignment and email audit foreign keys.
 - `advisor-request-notify` Edge Function **version 2** is active, with in-function JWT validation. The previous `advisor-decision-email` function remains active and unchanged.
 - Transactional synthetic checks passed for advisor-code creation, student assignment, idempotent pending requests, student decision denial, approval storage, and RLS visibility for student, advisor and unrelated user. Every synthetic test transaction was **rolled back**.
 - Existing Supabase Auth user count and original `advisor_profiles` data were preserved; no test users or test approvals remain.
@@ -28,7 +29,7 @@ Replace the mandatory manual handoff of student approval-request JSON with a sec
 
 ## REQUIRED manual deployment (do not skip)
 
-1. **Before any database changes**, obtain a verified backup of the current Supabase schema/data (especially `advisor_profiles` and `auth.users`). This repository does not contain a verified live database schema dump. Review the migration against the current production schema. It assumes `public.advisor_profiles(id uuid, email text, sid, role)` with student/advisor/admin roles.
+1. **For any new environment, before database changes**, obtain a verified backup of the current Supabase schema/data (especially `advisor_profiles` and `auth.users`). This repository does not contain a verified live database schema dump. Review the migration against the current production schema. It assumes `public.advisor_profiles(id uuid, email text, sid, role)` with student/advisor/admin roles.
 2. In the existing Supabase project, run the SQL file in the SQL Editor using a trusted database administrator. No service-role API keys should be pasted into the browser or repository. Confirm the tables exist and RLS is enabled:
    - `public.advisor_student_assignments`
    - `public.advisor_plan_requests`
@@ -95,7 +96,7 @@ Replace the mandatory manual handoff of student approval-request JSON with a sec
 
 ## ADDITION: First-time advisor code and notification email (2026-11-15 update)
 
-**This PR includes the complete code changes, but is NOT active on the live website.** Apply the SQL migration first, then deploy the new Edge Function and test with anonymized accounts before merging the frontend.
+**This implementation is now merged into the main source branch and the Supabase backend is deployed.** The instructions below are retained for setting up another environment; do not blindly reapply the recorded migrations in production. Real student/advisor sign-in and email delivery still require a pilot.
 
 ### Code assignment
 - Each verified advisor receives **one unique persistent code** in their advisor inbox, generated on first login by `advisor_get_my_code()`. Its format is `ADV-` followed by 24 uppercase hexadecimal digits.
@@ -130,3 +131,10 @@ Replace the mandatory manual handoff of student approval-request JSON with a sec
 - Validate email quotas and rate limits under an estimated 7,000 students before rollout.
 
 **Known limitation:** Academic bylaw checks remain in the existing browser engine, with advisor-side re-evaluation, and are NOT independently recomputed by the SQL RPC. This remains a pilot decision-support workflow, not authorized SIS registration.
+
+## Release notes
+
+- GitHub Pull Request #6 merged 15 Nov 2026; commit `bde89b3add366b6a9e4ffe95905f58620d94f702`.
+- Live database migrations applied and confirmed. The existing one-administrator account was preserved. Temporary integration test records were rolled back.
+- A dedicated ChatGPT Brevo connector was not available in the plugin directory. The existing Brevo API integration is hosted in Supabase Edge Functions; both email endpoints share configured project secrets. Prior decision-email audit records show two sent messages, but the new request email has not been validated with live identities.
+- Student/advisor registration and confirmation require real institutional email addresses. These were intentionally not fabricated or provisioned as unverified permanent accounts.
