@@ -8,7 +8,7 @@ import vm from 'node:vm';
 const source = readFileSync(new URL('../advisor-inbox.js', import.meta.url), 'utf8');
 
 function app(role, {
-  actualRole = role, rows = [], rpcError = null, advisorReview = null
+  actualRole = role, rows = [], rpcError = null, advisorReview = null, assigned = true, notifyError = null
 } = {}) {
   const elements = new Map();
   const calls = [];
@@ -25,17 +25,19 @@ function app(role, {
     session:{role,actualRole,authUserId:'user-1',email:'student@example.edu'},
     analysis:null,plan:[],depId:null,advisorView:role==='advisor'
   };
+  let lastTable='';
   const query = {
     select(){return this},eq(){return this},order(){return this},
     async limit(){return {data:rows,error:null}},
     async range(){return {data:rows,count:rows.length,error:null}},
-    async maybeSingle(){return {data:null,error:null}}
+    async maybeSingle(){return {data:lastTable==='advisor_student_assignments' && assigned ? {advisor_id:'advisor-1'} : null,error:null}}
   };
   const client = () => ({
-    from(table){calls.push(['from',table]);return query},
+    from(table){lastTable=table;calls.push(['from',table]);return query},
+    functions:{async invoke(name,args){calls.push(['invoke',name,args]);return notifyError ? {error:{message:notifyError}} : {data:{ok:true},error:null}}},
     async rpc(name,args) {
       calls.push(['rpc',name,args]);
-      return rpcError ? {error:{message:rpcError}} : {data:true,error:null};
+      return rpcError ? {error:{message:rpcError}} : {data:name==='advisor_get_my_code'?'ADV-'+'A'.repeat(24):'11111111-1111-4111-8111-111111111111',error:null};
     }
   });
   const context = {
@@ -45,6 +47,7 @@ function app(role, {
     LANG:'en',activeStudentId:()=> '12345678901234',
     planFingerprint:async()=> 'f'.repeat(16),
     renderDecision(){},renderAdvisorWS(){},
+    buildRequest:async()=>request,
     requestToState(){return {rows:[],overCap:false}},
     advReview:advisorReview,
     adminAccountsCache:{},setInterval(){return 1},clearInterval(){}
@@ -96,4 +99,39 @@ test('admin assignment panel exposes email-based assignment form',async()=>{
   await x.api.refreshAdminAssignments();
   assert.match(x.elements.get('admin-advisor-assignments').innerHTML,/Assign students/);
   assert.match(x.elements.get('admin-advisor-assignments').innerHTML,/assign-student-email/);
+});
+
+test('new student is prompted for advisor code without creating an assignment prematurely',async()=>{
+  const x=app('student',{assigned:false});
+  assert.equal(await x.api.submit(request),false);
+  assert.match(x.elements.get('student-online-requests').innerHTML,/student-advisor-code-form/);
+  assert.ok(!x.calls.some(([kind,name])=>kind==='rpc'&&name==='advisor_submit_plan'));
+});
+
+test('first-time valid code registers an advisor and sends the online request',async()=>{
+  const x=app('student',{assigned:false});
+  assert.equal(await x.api.submit(request),false);
+  assert.equal(await x.api.submit(request,'ADV-'+'A'.repeat(24)),true);
+  const item=x.calls.find(([kind,name])=>kind==='rpc'&&name==='advisor_submit_plan');
+  assert.equal(item[2].p_advisor_code,'ADV-'+'A'.repeat(24));
+  assert.ok(x.calls.some(([kind,name])=>kind==='invoke'&&name==='advisor-request-notify'));
+});
+
+test('invalid code does not invoke the server-side assignment RPC',async()=>{
+  const x=app('student',{assigned:false});
+  assert.equal(await x.api.submit(request,'123'),false);
+  assert.ok(!x.calls.some(([kind,name])=>kind==='rpc'&&name==='advisor_submit_plan'));
+});
+
+test('failed Brevo new-request email does not lose the pending online request',async()=>{
+  const x=app('student',{notifyError:'Brevo unavailable'});
+  assert.equal(await x.api.submit(request),true);
+  assert.match(x.elements.get('student-online-requests').innerHTML,/Brevo unavailable/);
+});
+
+test('verified advisor sees their own stable routing code',async()=>{
+  const x=app('advisor');
+  await x.api.refreshAdvisorCode();
+  assert.match(x.elements.get('advisor-online-inbox').innerHTML,/ADV-AAAAAAAAAAAAAAAAAAAAAAAA/);
+  assert.ok(x.calls.some(([kind,name])=>kind==='rpc'&&name==='advisor_get_my_code'));
 });
