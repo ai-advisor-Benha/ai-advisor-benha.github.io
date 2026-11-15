@@ -7,7 +7,7 @@
   let advisorError = '', studentError = '', adminError = '', assignmentMessage = '';
   let busySubmit = false, refreshTimer = null, bound = false;
   let pendingCodeRequest = null, advisorCode = '', advisorCodeError = '', noticeWarning = '';
-  let advisorFilter = 'pending';
+  let advisorFilter = 'all';
   const pageSize = 50;
   const dict = {
     en: {
@@ -224,6 +224,22 @@
         <div><h3>${safe(w().advisorTitle)}</h3><p class="small muted">${safe(w().advisorSub)}</p></div>
         <button type="button" class="btn btn-ghost btn-sm" data-inbox-action="advisor-refresh">${safe(w().refresh)}</button>
       </div>
+      ${advisorCode ? `<div class="panel panel-pad space-y-2" style="background:var(--bg-subtle,transparent)">
+        <strong>${safe(w().myAdvisorCode)}</strong>
+        <p class="small muted">${safe(w().myAdvisorCodeHint)}</p>
+        <div class="flex flex-wrap items-center gap-2">
+          <code class="code" dir="ltr" style="overflow-wrap:anywhere">${safe(advisorCode)}</code>
+          <button type="button" class="btn btn-ghost btn-sm" data-inbox-action="copy-advisor-code">${safe(w().copyCode)}</button>
+        </div>
+      </div>` : ''}
+      ${advisorCodeError ? `<p class="alert alert-am small" role="alert">${safe(advisorCodeError)}</p>` : ''}
+      <div class="flex flex-wrap gap-2 items-center">
+        <label for="advisor-inbox-filter" class="small">${safe(w().filterLabel)}</label>
+        <select id="advisor-inbox-filter" class="select" style="width:auto">
+          <option value="all" ${advisorFilter==='all'?'selected':''}>${safe(w().allFilter)}</option>
+          ${['pending','approved','changes'].map(x=>`<option value="${x}" ${advisorFilter===x?'selected':''}>${status(x)}</option>`).join('')}
+        </select>
+      </div>
       ${advisorError ? `<div class="alert alert-am small" role="alert">${safe(advisorError)}</div>` : ''}
       ${inbox.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr>
         ${w().columns.map(label => `<th>${safe(label)}</th>`).join('')}
@@ -245,16 +261,27 @@
   async function refreshAdvisor() {
     if (!signedAdvisor()) return;
     try {
-      const {data,error,count} = await c().from('advisor_plan_requests')
+      let query=c().from('advisor_plan_requests')
         .select('id,student_name,student_email,term,program,status,created_at',
           {count:'exact'})
-        .eq('advisor_id',S.session.authUserId)
-        .order('created_at',{ascending:false})
+        .eq('advisor_id',S.session.authUserId);
+      if(advisorFilter!=='all')query=query.eq('status',advisorFilter);
+      const {data,error,count}=await query.order('created_at',{ascending:false})
         .range(inboxPage*pageSize,inboxPage*pageSize+pageSize-1);
       if (error) throw error;
       inbox = data || []; inboxCount = count || 0; advisorError = '';
       if (inboxPage && !inbox.length) { inboxPage = 0; return refreshAdvisor(); }
     } catch(e) { advisorError = errorText(e); inbox=[]; inboxCount=0; }
+    renderAdvisor();
+  }
+
+  async function refreshAdvisorCode() {
+    if(!signedAdvisor())return;
+    try {
+      const {data,error}=await c().rpc('advisor_get_my_code');
+      if(error)throw error;
+      advisorCode=String(data||'');advisorCodeError='';
+    }catch(e){advisorCodeError=w().codeUnavailable+errorText(e);}
     renderAdvisor();
   }
 
@@ -345,7 +372,7 @@
     if (refreshTimer) clearInterval(refreshTimer);
     refreshTimer=null;
     if (on && signedAdvisor()) {
-      inboxPage=0; void refreshAdvisor();
+      inboxPage=0; void refreshAdvisor(); void refreshAdvisorCode();
       if (signedAdmin()) void refreshAdminAssignments();
       refreshTimer=setInterval(() => {if(signedAdvisor() && S.advisorView) void refreshAdvisor();},60000);
     } else if (signedStudent()) {
@@ -356,7 +383,8 @@
   function onLogout() {
     if (refreshTimer) clearInterval(refreshTimer);
     refreshTimer=null; inbox=[];requests=[];assignments=[];advisorError='';studentError='';adminError='';
-    assignmentMessage='';inboxPage=0;inboxCount=0;
+    assignmentMessage='';inboxPage=0;inboxCount=0;advisorCode='';advisorCodeError='';
+    pendingCodeRequest=null;noticeWarning='';advisorFilter='all';
   }
 
   function bind() {
@@ -368,11 +396,27 @@
         else if(a.dataset.inboxAction==='advisor-refresh') void refreshAdvisor();
         else if(a.dataset.inboxAction==='advisor-next'){inboxPage++;void refreshAdvisor();}
         else if(a.dataset.inboxAction==='advisor-prev'){inboxPage=Math.max(0,inboxPage-1);void refreshAdvisor();}
+        else if(a.dataset.inboxAction==='copy-advisor-code' && advisorCode) {
+          if(navigator?.clipboard?.writeText)void navigator.clipboard.writeText(advisorCode)
+            .catch(()=>alertToast(advisorCode));
+          else alertToast(advisorCode,'em');
+        }
       }
       const open=e.target.closest('[data-inbox-open]');
       if(open) void openRequest(open.dataset.inboxOpen);
     });
+    document.addEventListener('change',e=>{
+      if(e.target.id==='advisor-inbox-filter' && signedAdvisor()){
+        advisorFilter=e.target.value||'all';inboxPage=0;void refreshAdvisor();
+      }
+    });
     document.addEventListener('submit',e=>{
+      if(e.target.id==='student-advisor-code-form'){
+        e.preventDefault();
+        const input=$('student-advisor-code');
+        if(input)void submitCodeForm(input.value);
+        return;
+      }
       if(e.target.id!=='advisor-assign-form')return;
       e.preventDefault();
       const a=$('assign-student-email'),b=$('assign-advisor-email');
@@ -381,6 +425,6 @@
   }
   window.AdvisorInbox = {
     bind,submit,refreshStudent,refreshAdvisor,refreshAdminAssignments,renderAdminAssignments,
-    saveDecision,onWorkspace,onLogout,renderStudent,renderAdvisor
+    saveDecision,onWorkspace,onLogout,renderStudent,renderAdvisor,refreshAdvisorCode
   };
 })();
