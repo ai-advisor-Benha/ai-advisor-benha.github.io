@@ -8,6 +8,7 @@
   let busySubmit = false, refreshTimer = null, bound = false;
   let pendingCodeRequest = null, advisorCode = '', advisorCodeError = '', noticeWarning = '';
   let advisorFilter = 'all';
+  let verification = null, verificationSequence = 0;
   const pageSize = 50;
   const dict = {
     en: {
@@ -95,6 +96,115 @@
   const signedAdmin = () => !!S.session && S.session.role === 'admin' && S.session.actualRole === 'admin';
   const c = () => client();
 
+  // A student must validate their OWN transcript before submitting a plan.
+  // The server performs an independent lookup; browser state is only a UI safeguard.
+  function transcriptKey() {
+    if (!signedStudent() || !S.transcript?.student) return '';
+    const st = S.transcript.student;
+    return [S.session.authUserId, st.nationalId || '', st.number || '', st.name || ''].join('|');
+  }
+  function isVerified() {
+    const key=transcriptKey();
+    return !!key && verification?.key===key && verification.status==='verified';
+  }
+  function updateSendButton() {
+    const button=$('btn-send-ap');
+    if (!button || !signedStudent()) return;
+    button.disabled = !isVerified() || !Array.isArray(S.plan) || !S.plan.length;
+    button.title = !isVerified()
+      ? (typeof LANG!=='undefined' && LANG==='ar'
+          ? 'تحقق أولاً من مطابقة بياناتك مع كشف المرشد الأكاديمي الرسمي'
+          : 'Verify your official academic advisor before sending a request.')
+      : (!S.plan?.length
+          ? (typeof LANG!=='undefined' && LANG==='ar' ? 'اختر مقررات الخطة أولاً' : 'Select courses first.')
+          : '');
+  }
+  function renderVerification() {
+    const el=$('student-advisor-verification');
+    if (!el) return;
+    if (!signedStudent() || !S.transcript?.student) {
+      el.innerHTML='';el.classList.add('hidden');updateSendButton();return;
+    }
+    el.classList.remove('hidden');
+    const st=S.transcript.student, key=transcriptKey();
+    const current=verification?.key===key ? verification : null;
+    const status=current?.status||'checking';
+    const isArabic=typeof LANG!=='undefined' && LANG==='ar';
+    const phrase=(en,ar)=>isArabic?ar:en;
+    const explanations={
+      checking:phrase('Checking your academic advisor against the official Ibn Al-Haytham roster…','جارٍ التحقق من مرشدك الأكاديمي باستخدام كشف ابن الهيثم الرسمي…'),
+      verified:current?.method==='admin_override'
+        ? phrase('Verified through an administrator-approved manual assignment.','تم التحقق من إسناد المرشد بمعرفة مدير النظام.')
+        : phrase('Verified: your university code and full name match the official advisor roster.','تم التحقق: الكود الجامعي والاسم الكامل مطابقان لكشف المرشد الأكاديمي الرسمي.'),
+      identity_mismatch:phrase('The transcript 14-digit ID is missing or differs from your registered login ID. Upload your own official transcript.','الرقم القومي المكون من ١٤ رقمًا غير موجود أو لا يطابق رقم حسابك. ارفع بيان حالتك الصحيح.'),
+      missing_student_details:phrase('The transcript must contain your university student code and full name.','يجب أن يحتوي بيان الحالة على كودك الجامعي واسمك الكامل.'),
+      not_found:phrase('Your university code and full name were not found together in any approved advisor roster. Ask your advisor to upload the official student list, or contact the administrator.','الكود الجامعي والاسم الكامل غير موجودين معاً في أي كشف مرشد معتمد. اطلب من مرشدك رفع كشف الطلاب الرسمي أو تواصل مع مدير النظام.'),
+      ambiguous:phrase('Multiple advisors are linked to these details. Contact the administrator to resolve the conflict.','يوجد تضارب بين أكثر من مرشد؛ تواصل مع مدير النظام لحل المشكلة.'),
+      assignment_conflict:phrase('Your existing advisor assignment conflicts with the official roster. Contact the administrator.','الإسناد الحالي للمرشد يتعارض مع الكشف الرسمي؛ تواصل مع مدير النظام.'),
+      error:phrase('Verification could not be completed. Check your connection and try again.','تعذر إتمام التحقق. راجع الاتصال وأعد المحاولة.')
+    };
+    const accepted=status==='verified';
+    const className=accepted?'alert-em':status==='checking'?'alert-ac':'alert-am';
+    const title=accepted?phrase('Academic advisor verified','تم التحقق من المرشد الأكاديمي')
+      :phrase('Academic advisor verification','التحقق من المرشد الأكاديمي');
+    const advisorName=accepted&&current?.advisorName
+      ? '<div class="mt-2" dir="auto"><strong>'+safe(phrase('Assigned advisor','المرشد المعتمد'))+':</strong> '+safe(current.advisorName)+'</div>'
+      : '';
+    el.innerHTML='<section class="panel panel-pad space-y-2" aria-live="polite">'+
+      '<div class="flex flex-wrap gap-2 items-center justify-between"><h3>'+safe(title)+'</h3>'+
+      '<button type="button" class="btn btn-ghost btn-sm" data-inbox-action="recheck-transcript">'+
+      safe(phrase('Check again','إعادة التحقق'))+'</button></div>'+
+      '<div class="small">'+safe(phrase('University student code','الكود الجامعي'))+
+      ': <strong dir="ltr">'+safe(st.number||'—')+'</strong></div>'+
+      '<div class="alert '+className+' small" role="status">'+safe(explanations[status]||explanations.error)+
+      (status==='error'&&current?.error?'<div>'+safe(current.error)+'</div>':'')+
+      advisorName+'</div>'+
+      (!accepted?'<p class="small muted">'+safe(phrase(
+        'Online approval submission is blocked until verification succeeds. Other academic analysis remains available.',
+        'تم إيقاف إرسال طلب الموافقة إلكترونياً حتى ينجح التحقق. يمكنك متابعة التحليل الأكاديمي.'
+      ))+'</p>':'')+'</section>';
+    updateSendButton();
+  }
+  async function verifyTranscript(force=false) {
+    const key=transcriptKey();
+    if (!key) {
+      verification=null;verificationSequence++;renderVerification();return false;
+    }
+    if (!force && isVerified()) {renderVerification();return true;}
+    const sequence=++verificationSequence;
+    const st=S.transcript.student, identity=String(st.nationalId||'').replace(/\D/g,'');
+    if(!/^\d{14}$/.test(identity) || identity!==String(S.session.sid||'')) {
+      verification={key,status:'identity_mismatch'};renderVerification();return false;
+    }
+    if(!/^\d{5,20}$/.test(String(st.number||'').trim()) ||
+       !String(st.name||'').trim()) {
+      verification={key,status:'missing_student_details'};renderVerification();return false;
+    }
+    verification={key,status:'checking'};renderVerification();
+    try {
+      const {data,error}=await c().rpc('advisor_check_transcript_roster',{
+        p_student_id:identity,
+        p_student_number:String(st.number||'').trim(),
+        p_student_name:String(st.name||'').trim()
+      });
+      if(sequence!==verificationSequence||transcriptKey()!==key)return false;
+      if(error) throw error;
+      const status=String(data?.status||'error');
+      verification={key,status,
+        advisorName:String(data?.advisorName||''),method:String(data?.method||'')};
+    } catch(ex) {
+      if(sequence!==verificationSequence||transcriptKey()!==key)return false;
+      verification={key,status:'error',error:errorText(ex)};
+    }
+    renderVerification();
+    return isVerified();
+  }
+  function onTranscriptLoaded() {
+    verificationSequence++;verification=null;
+    renderVerification();
+    if(signedStudent()&&S.transcript?.student)void verifyTranscript();
+  }
+
   function renderStudent() {
     const el = $('student-online-requests');
     if (!el) return;
@@ -160,6 +270,12 @@
     if (busySubmit) return false;
     if (!signedStudent() || r.demo) {
       studentError = w().demo; renderStudent(); return false;
+    }
+    if(!isVerified() && !(await verifyTranscript(true))) {
+      studentError = typeof LANG!=='undefined' && LANG==='ar'
+        ? 'تعذر إرسال الطلب: يجب التحقق من مرشدك الأكاديمي أولاً.'
+        : 'Online request blocked: your academic advisor must be verified first.';
+      renderStudent();return false;
     }
     busySubmit=true;
     studentError=w().sending;noticeWarning='';renderStudent();
@@ -368,10 +484,12 @@
       refreshTimer=setInterval(() => {if(signedAdvisor() && S.advisorView) void refreshAdvisor();},60000);
     } else if (signedStudent()) {
       void refreshStudent();
+      if (S.transcript?.student)void verifyTranscript();
       refreshTimer=setInterval(() => {if(signedStudent() && !S.advisorView) void refreshStudent();},60000);
     }
   }
   function onLogout() {
+    verificationSequence++;verification=null;renderVerification();
     if (refreshTimer) clearInterval(refreshTimer);
     refreshTimer=null; inbox=[];requests=[];assignments=[];linkedAdvisor=null;advisorError='';studentError='';adminError='';
     assignmentMessage='';inboxPage=0;inboxCount=0;advisorCode='';advisorCodeError='';
@@ -384,6 +502,7 @@
       const a=e.target.closest('[data-inbox-action]');
       if(a){
         if(a.dataset.inboxAction==='student-refresh') void refreshStudent();
+        else if(a.dataset.inboxAction==='recheck-transcript') void verifyTranscript(true);
         else if(a.dataset.inboxAction==='advisor-refresh') void refreshAdvisor();
         else if(a.dataset.inboxAction==='advisor-next'){inboxPage++;void refreshAdvisor();}
         else if(a.dataset.inboxAction==='advisor-prev'){inboxPage=Math.max(0,inboxPage-1);void refreshAdvisor();}
@@ -416,6 +535,7 @@
   }
   window.AdvisorInbox = {
     bind,submit,refreshStudent,refreshAdvisor,refreshAdminAssignments,renderAdminAssignments,
-    saveDecision,onWorkspace,onLogout,renderStudent,renderAdvisor,refreshAdvisorCode
+    saveDecision,onWorkspace,onLogout,renderStudent,renderAdvisor,refreshAdvisorCode,
+    onTranscriptLoaded,verifyTranscript,renderVerification,updateSendButton,isVerified
   };
 })();
