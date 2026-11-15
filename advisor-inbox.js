@@ -3,7 +3,7 @@
    Keep all privileges in Postgres RLS/SECURITY DEFINER, never in browser role toggles. */
 (() => {
   'use strict';
-  let inbox = [], requests = [], assignments = [], inboxPage = 0, inboxCount = 0;
+  let inbox = [], requests = [], assignments = [], linkedAdvisor = null, inboxPage = 0, inboxCount = 0;
   let advisorError = '', studentError = '', adminError = '', assignmentMessage = '';
   let busySubmit = false, refreshTimer = null, bound = false;
   let pendingCodeRequest = null, advisorCode = '', advisorCodeError = '', noticeWarning = '';
@@ -18,12 +18,12 @@
       codeButton:'Assign my advisor & submit',codeChanged:'Your plan changed. Click Send for approval again.',
       codeIncorrect:'Please enter an advisor code in the format ADV- followed by 24 letters/numbers (A–F and 0–9).',
       notificationsFailed:'Request saved, but the advisor email notification was not sent: ',
-      pendingTitle:'Pending approval',myAdvisorCode:'Your unique academic advisor code',
-      myAdvisorCodeHint:'Share this code only with students assigned to you. They enter it once when submitting their first request.',
+      pendingTitle:'Pending approval',myAdvisorCode:'Legacy advisor routing code (not required for automatic matching)',
+      myAdvisorCodeHint:'Legacy advisor code for supervised exceptions. Normal students are matched automatically through approved official Ibn Al-Haytham rosters.',
       copyCode:'Copy code',codeUnavailable:'Advisor code could not be loaded: ',
       filterLabel:'Filter requests',allFilter:'All requests', 
-      sending:'Submitting to your assigned advisor…',
-      sent:'Request saved in your advisor’s online inbox. Keep the downloaded JSON as backup.',
+      sending:'Matching the official advisor roster and submitting your plan…',
+      sent:'Request matched to your officially approved academic advisor and saved online. Keep the downloaded JSON as backup.',
       backup:'The JSON was downloaded, but online submission did not succeed: ',
       demo:'Student Demo Mode uses the existing JSON exchange; no sample record is uploaded.',
       unavailable:'Online inbox not configured. An administrator must apply the Supabase migration first.',
@@ -34,8 +34,8 @@
       pending:'Pending approval', approved:'Approved', changes:'Changes requested',
       columns:['Student','Semester','Status','Submitted','Action'],
       reviewed:'This request has already been reviewed. It cannot be decided twice.',
-      adminTitle:'Assign students to academic advisors',
-      adminSub:'Assign a registered student to a verified advisor first. New plans are then delivered automatically to that advisor only.',
+      adminTitle:'Manual advisor assignment — exceptional cases only',
+      adminSub:'Students are normally matched using an administrator-approved Ibn Al-Haytham roster. Use this manual override only after independently checking the student and advisor identities.',
       studentEmail:'Student email', advisorEmail:'Academic advisor email', assign:'Save assignment',
       assignmentSaved:'Assignment saved. Future submissions will reach the selected advisor.',
       adminEmpty:'No assignments created yet.',
@@ -52,12 +52,12 @@
       codeButton:'تعيين المرشد وإرسال الطلب',codeChanged:'تم تعديل الخطة. اضغط إرسال للاعتماد مرة أخرى.',
       codeIncorrect:'أدخل كود المرشد بصيغة ADV- متبوعًا بـ24 حرفًا/رقمًا (A–F و0–9).',
       notificationsFailed:'تم حفظ الطلب، لكن تعذّر إرسال إشعار البريد للمرشد: ',
-      pendingTitle:'في انتظار الموافقة',myAdvisorCode:'الكود الفريد للمرشد الأكاديمي',
-      myAdvisorCodeHint:'شارك الكود فقط مع الطلاب المسندين إليك. يدخل الطالب الكود مرة واحدة عند إرسال أول طلب.',
+      pendingTitle:'في انتظار الموافقة',myAdvisorCode:'كود الربط القديم (لا يلزم عند المطابقة التلقائية)',
+      myAdvisorCodeHint:'للحالات الاستثنائية القديمة فقط. يتم ربط الطالب تلقائياً من كشف الطلاب الرسمي الذي اعتمده مدير النظام.',
       copyCode:'نسخ الكود',codeUnavailable:'تعذّر تحميل كود المرشد: ',
       filterLabel:'تصفية الطلبات',allFilter:'كل الطلبات',
-      sending:'جارٍ إرسال الطلب إلى المرشد المكلف…',
-      sent:'تم حفظ الطلب في صندوق المرشد الأكاديمي. احتفظ بملف JSON كنسخة احتياطية.',
+      sending:'تجري مطابقة البيانات مع كشوف المرشدين الرسمية المعتمدة وإرسال الخطة…',
+      sent:'تمت مطابقة الطالب مع المرشد المعتمد وحفظ الطلب إلكترونياً. احتفظ بنسخة JSON احتياطية.',
       backup:'تم تنزيل ملف JSON ولكن تعذر الإرسال الإلكتروني: ',
       demo:'وضع العرض التجريبي يستخدم تبادل JSON دون رفع بيانات العينة.',
       unavailable:'الصندوق الإلكتروني غير مُهيأ. يجب تطبيق ترحيل قاعدة البيانات أولًا.',
@@ -68,8 +68,8 @@
       pending:'في انتظار الموافقة', approved:'تمت الموافقة', changes:'مطلوب تعديل',
       columns:['الطالب','الفصل','الحالة','تاريخ الإرسال','إجراء'],
       reviewed:'تمت مراجعة الطلب بالفعل ولا يمكن اعتماده مرتين.',
-      adminTitle:'إسناد الطلاب إلى المرشدين الأكاديميين',
-      adminSub:'أسند الطالب المسجل إلى مرشد أكاديمي معتمد أولًا؛ ثم تصل خططه تلقائيًا إلى هذا المرشد فقط.',
+      adminTitle:'الإسناد اليدوي للمرشد — للحالات الاستثنائية فقط',
+      adminSub:'تتم مطابقة الطلاب تلقائياً باستخدام كشوف ابن الهيثم المعتمدة من مدير النظام. استخدم الاستثناء اليدوي فقط بعد التحقق من هوية الطالب ومرشده رسمياً.',
       studentEmail:'البريد الإلكتروني للطالب', advisorEmail:'بريد المرشد الأكاديمي', assign:'حفظ الإسناد',
       assignmentSaved:'تم حفظ الإسناد وستصل الطلبات الجديدة إلى المرشد المحدد.',
       adminEmpty:'لا توجد تعيينات حتى الآن.',
@@ -105,6 +105,7 @@
         <h3>${safe(w().title)}</h3>
         <button type="button" class="btn btn-ghost btn-sm" data-inbox-action="student-refresh">${safe(w().refresh)}</button>
       </div>
+      ${linkedAdvisor?.email ? `<div class="panel panel-pad small" dir="auto"><strong>${safe(typeof LANG!=='undefined' && LANG==='ar' ? 'مرشدك الأكاديمي المعتمد' : 'Your verified academic advisor')}:</strong> ${safe(linkedAdvisor.name || '')} — <a href="mailto:${encodeURIComponent(linkedAdvisor.email)}">${safe(linkedAdvisor.email)}</a></div>` : ''}
       ${studentError ? `<div class="alert alert-am small" role="status">${safe(studentError)}</div>` : ''}
       ${pendingCodeRequest ? `<form id="student-advisor-code-form" class="panel panel-pad space-y-3" autocomplete="off">
         <p class="small">${safe(w().needCode)}</p>
@@ -118,6 +119,7 @@
         </div>
       </form>` : ''}
       ${noticeWarning ? `<p class="alert alert-am small" role="status">${safe(noticeWarning)}</p>` : ''}
+      <p class="small muted" dir="auto">${safe(S.session?.role==='student' && typeof LANG!=='undefined' && LANG==='ar' ? 'يتم اختيار المرشد الأكاديمي تلقائياً من كشف ابن الهيثم المعتمد. تأكد من تطابق الكود الجامعي والاسم في ملفك. لا تحتاج إدخال بريد المرشد.' : 'Your advisor is selected automatically from an administrator-approved Ibn Al-Haytham roster using your university student number and full name. You do not need to enter an advisor email or code.')}</p>
       <div class="small muted">${safe(w().manual)}</div>
       ${requests.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>${safe(w().columns[1])}</th><th>${safe(w().columns[2])}</th><th>${safe(w().columns[3])}</th></tr></thead><tbody>
         ${requests.map(r => `<tr><td>${safe(r.term)} · ${safe(r.program)}</td><td>${status(r.status)}${r.decision?.comment ? `<div class="small muted" dir="auto">${safe(r.decision.comment)}</div>` : ''}</td><td class="small">${safe(fmt(r.created_at))}</td></tr>`).join('')}
@@ -134,6 +136,8 @@
         .eq('student_id', S.session.authUserId).order('created_at',{ascending:false}).limit(20);
       if (error) throw error;
       requests = data || []; studentError = '';
+      const linked = await c().rpc('advisor_my_linked_advisor');
+      if (!linked.error) linkedAdvisor = linked.data || null;
       if (S.analysis && S.plan.length && S.depId) {
         const fp = await planFingerprint({
           studentId:activeStudentId(), term:S.term, plan:S.plan,
@@ -160,21 +164,8 @@
     busySubmit=true;
     studentError=w().sending;noticeWarning='';renderStudent();
     try {
-      const selection=await c().from('advisor_student_assignments')
-        .select('advisor_id').eq('student_id',S.session.authUserId).maybeSingle();
-      if(selection.error)throw selection.error;
-      const code=String(enteredCode||'').trim().toUpperCase();
-      if(!selection.data && !code) {
-        pendingCodeRequest=r;
-        studentError=w().needCode;
-        renderStudent();
-        $('student-advisor-code')?.focus?.();
-        return false;
-      }
-      if(code && !/^ADV-[A-F0-9]{24}$/.test(code))
-        throw new Error(w().codeIncorrect);
-      const {data:requestId,error}=await c().rpc('advisor_submit_plan',
-        {p_request:r,p_advisor_code:code||null});
+      // Verified, approved Ibn Al-Haytham roster determines the advisor. No email/code guessing.
+      const {data:requestId,error}=await c().rpc('advisor_submit_verified_plan',{p_request:r});
       if(error)throw error;
       pendingCodeRequest=null;
       await refreshStudent();
@@ -382,7 +373,7 @@
   }
   function onLogout() {
     if (refreshTimer) clearInterval(refreshTimer);
-    refreshTimer=null; inbox=[];requests=[];assignments=[];advisorError='';studentError='';adminError='';
+    refreshTimer=null; inbox=[];requests=[];assignments=[];linkedAdvisor=null;advisorError='';studentError='';adminError='';
     assignmentMessage='';inboxPage=0;inboxCount=0;advisorCode='';advisorCodeError='';
     pendingCodeRequest=null;noticeWarning='';advisorFilter='all';
   }
