@@ -61,6 +61,8 @@ Deno.serve(async(request:Request) => {
       .eq('id',body.requestId).eq('student_id',actor.id).maybeSingle();
     if (readError)fail('Could not read saved plan.',503);
     if (!plan)fail('Your online request was not found.',404);
+    if (plan.status !== 'pending')
+      fail('This request has already been reviewed. Its decision is available in the online dashboard.',409);
     const assignment=await trusted.from('advisor_student_assignments')
       .select('advisor_id').eq('student_id',actor.id).maybeSingle();
     if (assignment.error||assignment.data?.advisor_id!==plan.advisor_id)
