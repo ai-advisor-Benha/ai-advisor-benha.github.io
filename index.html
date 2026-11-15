@@ -320,6 +320,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.88rem}
       <div><h2 id="ws-title"></h2><p class="muted mt-1" id="ws-sub"></p></div>
       <div id="admin-panel" class="space-y-4 hidden"></div>
       <div id="advisor-online-inbox" aria-live="polite"></div>
+      <div id="advisor-official-roster" aria-live="polite"></div>
       <div class="panel panel-pad space-y-3">
         <h3 id="ws-review-title"></h3><p class="small muted" id="ws-review-sub"></p>
         <label class="dropzone block" id="dz-req"><input type="file" accept=".json,application/json" class="hidden" id="in-req"><span id="dz-req-text"></span></label>
@@ -533,6 +534,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.88rem}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0"></script>
 <script src="./supabase-config.js"></script>
 <script src="./advisor-inbox.js"></script>
+<script src="./advisor-roster.js"></script>
 
 <script>
 /* =====================================================================
@@ -3829,6 +3831,7 @@ function showWorkspace(on) {
   $('ws-title').textContent = t(adm ? 'admTitle' : 'wsTitle'); $('ws-sub').textContent = t(adm ? 'admSub' : 'wsSub');
   if (on) { renderAdvisorWS(); renderAdminPanel(); }
   window.AdvisorInbox?.onWorkspace(on);
+  window.AdvisorRoster?.onWorkspace(on);
 }
 
 function renderAutoPlan() {
@@ -4633,6 +4636,7 @@ function bind() {
     el.tabIndex = 0; el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $(inp).click(); } });
   }
   window.AdvisorInbox?.bind();
+  window.AdvisorRoster?.bind();
 }
 function alertToast(msg, kind) {
   const d = document.createElement('div'); d.className = 'toast'; d.setAttribute('role', 'alert');
