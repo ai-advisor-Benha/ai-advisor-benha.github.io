@@ -16,6 +16,15 @@ create table if not exists public.advisor_student_assignments (
 create index if not exists advisor_assignments_by_advisor
   on public.advisor_student_assignments (advisor_id, student_id);
 
+-- One high-entropy routing code per registered advisor, not an authentication secret.
+create table if not exists public.advisor_registration_codes (
+  advisor_id uuid primary key references public.advisor_profiles(id) on delete cascade,
+  code text not null unique check (code ~ '^ADV-[0-9A-F]{24}$'),
+  issued_at timestamptz not null default now()
+);
+alter table public.advisor_registration_codes enable row level security;
+revoke all on public.advisor_registration_codes from public, anon, authenticated;
+
 create table if not exists public.advisor_plan_requests (
   id uuid primary key default gen_random_uuid(),
   student_id uuid not null references public.advisor_profiles(id) on delete cascade,
@@ -83,6 +92,27 @@ create policy advisor_plan_select
   );
 -- No browser INSERT/UPDATE/DELETE policies. Writes happen only via validated RPCs.
 
+-- Advisors create/retrieve their one persistent code. Students have no direct read access.
+create or replace function public.advisor_get_my_code()
+returns text language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_actor uuid := auth.uid();
+  v_role text;
+  v_code text;
+begin
+  select role into v_role from public.advisor_profiles where id = v_actor;
+  if v_actor is null or v_role not in ('advisor','admin') then
+    raise exception 'Approved academic advisor account required.' using errcode = '42501';
+  end if;
+  insert into public.advisor_registration_codes(advisor_id, code)
+    values(v_actor, upper('ADV-' || substr(replace(gen_random_uuid()::text,'-',''),1,24)))
+    on conflict(advisor_id) do nothing;
+  select code into v_code from public.advisor_registration_codes where advisor_id = v_actor;
+  return v_code;
+end;
+$$;
+
 create or replace function public.advisor_assign_student(
   p_student_email text, p_advisor_email text
 ) returns uuid
@@ -124,7 +154,7 @@ end;
 $$;
 
 create or replace function public.advisor_submit_plan(
-  p_request jsonb
+  p_request jsonb, p_advisor_code text default null
 ) returns uuid
 language plpgsql security definer set search_path = ''
 as $$
@@ -134,6 +164,8 @@ declare
   v_sid text;
   v_role text;
   v_advisor uuid;
+  v_code_advisor uuid;
+  v_code text := upper(btrim(coalesce(p_advisor_code,'')));
   v_id uuid;
   v_fp text;
 begin
@@ -176,7 +208,31 @@ begin
     join public.advisor_profiles p on p.id = a.advisor_id
     where a.student_id = v_student and p.role in ('advisor','admin');
   if v_advisor is null then
-    raise exception 'No academic advisor is assigned to your account. Contact the administrator. The downloaded JSON can still be shared manually.';
+    -- First submission can enroll by code. Conflict-safe: no reassignment by students.
+    if v_code !~ '^ADV-[0-9A-F]{24}$' then
+      raise exception 'Enter the unique academic advisor code given to you by your advisor.';
+    end if;
+    select codes.advisor_id into v_code_advisor
+      from public.advisor_registration_codes codes
+      join public.advisor_profiles p on p.id = codes.advisor_id
+      where codes.code = v_code and p.role in ('advisor','admin');
+    if v_code_advisor is null then
+      raise exception 'Invalid advisor code. Check it with your academic advisor.';
+    end if;
+    insert into public.advisor_student_assignments(student_id,advisor_id,assigned_by)
+      values(v_student,v_code_advisor,null)
+      on conflict(student_id) do nothing;
+    select advisor_id into v_advisor
+      from public.advisor_student_assignments where student_id = v_student;
+    if v_advisor is distinct from v_code_advisor then
+      raise exception 'Your account is already assigned to a different advisor. Contact the administrator.';
+    end if;
+  elsif v_code <> '' then
+    select codes.advisor_id into v_code_advisor
+      from public.advisor_registration_codes codes where codes.code = v_code;
+    if v_code_advisor is distinct from v_advisor then
+      raise exception 'Another advisor is already assigned. Contact the administrator to change advisors.';
+    end if;
   end if;
   -- Idempotent retry and modest per-student safeguards for enrollment peaks.
   select id into v_id from public.advisor_plan_requests
@@ -268,11 +324,13 @@ begin
 end;
 $$;
 
+revoke all on function public.advisor_get_my_code() from public, anon;
 revoke all on function public.advisor_assign_student(text,text) from public, anon;
-revoke all on function public.advisor_submit_plan(jsonb) from public, anon;
+revoke all on function public.advisor_submit_plan(jsonb,text) from public, anon;
 revoke all on function public.advisor_save_plan_decision(uuid,jsonb) from public, anon;
+grant execute on function public.advisor_get_my_code() to authenticated;
 grant execute on function public.advisor_assign_student(text,text) to authenticated;
-grant execute on function public.advisor_submit_plan(jsonb) to authenticated;
+grant execute on function public.advisor_submit_plan(jsonb,text) to authenticated;
 grant execute on function public.advisor_save_plan_decision(uuid,jsonb) to authenticated;
 
 commit;
