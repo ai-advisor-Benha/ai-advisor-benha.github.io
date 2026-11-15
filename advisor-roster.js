@@ -4,6 +4,7 @@
 (() => {
   'use strict';
   let preview = null, batches = [], adminEmails = {}, expanded = null, batchMembers = [];
+  let previewFilter = '';
   let busy = false, message = '', error = '', started = false;
   const $r = id => document.getElementById(id);
   const html = s => String(s == null ? '' : s).replace(/[&<>"']/g, x =>
@@ -77,6 +78,28 @@
     data.filename=file.name;
     return data;
   }
+  // The right-hand preview is local to the signed-in advisor's browser;
+  // filtering does not send names or university codes to the database.
+  const normalizedSearch = value => String(value || '').normalize('NFKC')
+    .replace(/[ًٌٍَُِّْٰـ]/g,'').replace(/[أإآٱ]/g,'ا')
+    .replace(/ى/g,'ي').replace(/ة/g,'ه').toLowerCase().trim();
+  function matchingPreviewStudents() {
+    if (!preview) return [];
+    const term=normalizedSearch(previewFilter);
+    if (!term) return preview.students;
+    return preview.students.filter(student =>
+      normalizedSearch(student.studentNumber).includes(term) ||
+      normalizedSearch(student.studentName).includes(term));
+  }
+  function previewStudentRows(students) {
+    if (!students.length)
+      return '<tr><td colspan="3" class="small muted">'+
+        lbl('No matching students found.','لا توجد أسماء مطابقة للبحث.')+'</td></tr>';
+    return students.map((student,i) =>
+      '<tr><td class="small muted">'+(i+1)+'</td><td class="code" dir="ltr">'+
+      html(student.studentNumber)+'</td><td dir="auto">'+
+      html(student.studentName)+'</td></tr>').join('');
+  }
   function render() {
     const el=$r('advisor-official-roster');
     if(!el||!advisor())return;
@@ -88,17 +111,42 @@
       lbl('Official roster (.xls/.xlsx)','كشف طلاب المرشد (.xls/.xlsx)')+
       '</label><input class="input" type="file" id="advisor-official-file" accept=".xls,.xlsx,.html,.htm"></div>';
     if(preview) {
-      out+='<div class="panel panel-pad space-y-2"><strong>'+
+      const matching=matchingPreviewStudents();
+      out+='<div class="panel panel-pad space-y-3"><strong>'+
         lbl('Report preview — review before uploading','معاينة الكشف قبل الرفع')+
-        '</strong><div class="small">'+lbl('Advisor','المرشد')+': <b dir="auto">'+html(preview.advisorName)+
-        '</b></div><div class="small">'+lbl('Faculty','الكلية')+': '+html(preview.facultyName)+
-        '</div><div class="small">'+lbl('Program','البرنامج')+': '+html(preview.programName)+
-        '</div><div class="small">'+lbl('Export date','تاريخ التصدير')+': '+html(preview.exportDate)+
-        '</div><div class="small"><b>'+html(preview.students.length)+'</b> '+
-        lbl('unique students detected','طالباً بكود جامعي فريد')+
-        '</div><p class="small muted">'+lbl('The advisor name must correspond to the registered advisor account. Uploads are held for administrator verification.','يجب أن يكون اسم المرشد في الكشف مطابقاً لحساب المرشد المسجل. لن يُعتمد الكشف دون موافقة المدير.')+
-        '</p><button class="btn btn-primary btn-sm" type="button" data-official-roster="upload" '+(busy?'disabled':'')+'>'+
-        lbl('Submit roster for administrator approval','إرسال الكشف لاعتماد المدير')+'</button></div>';
+        '</strong><div class="grid md:grid-cols-2 gap-4 items-start">'+
+        '<div class="space-y-3"><div class="small">'+lbl('Advisor','المرشد')+
+        ': <b dir="auto">'+html(preview.advisorName)+'</b></div>'+
+        '<div class="small">'+lbl('Faculty','الكلية')+': '+html(preview.facultyName)+'</div>'+
+        '<div class="small">'+lbl('Program','البرنامج')+': '+html(preview.programName)+'</div>'+
+        '<div class="small">'+lbl('Export date','تاريخ التصدير')+': '+html(preview.exportDate)+'</div>'+
+        '<div class="small"><b>'+html(preview.students.length)+'</b> '+
+        lbl('unique students detected','طالباً بكود جامعي فريد')+'</div>'+
+        '<p class="small muted">'+
+        lbl('Check the advisor name and students on the right. This report will be held for administrator verification.','راجع اسم المرشد وأسماء الطلاب في الجدول المجاور. يُرسل الكشف إلى مدير النظام للتحقق والاعتماد.')+
+        '</p></div>'+
+        '<div class="panel panel-pad space-y-2">'+
+        '<div class="flex flex-wrap gap-2 items-center justify-between"><strong class="small">'+
+        lbl('Students in this roster','الطلاب في هذا الكشف')+
+        '</strong><span class="small muted" id="advisor-roster-preview-count" aria-live="polite">'+
+        html(matching.length)+' / '+html(preview.students.length)+'</span></div>'+
+        '<label class="small" for="advisor-roster-preview-search">'+
+        lbl('Search by student name or university code','البحث باسم الطالب أو الكود الجامعي')+'</label>'+
+        '<input class="input" type="search" id="advisor-roster-preview-search" '+
+        'autocomplete="off" placeholder="'+lbl('Search students…','ابحث عن طالب…')+'" value="'+
+        html(previewFilter)+'" aria-controls="advisor-roster-preview-list">'+
+        '<div class="tbl-wrap" style="max-height:340px;overflow:auto" id="advisor-roster-preview-list">'+
+        '<table class="tbl" style="width:100%"><thead><tr><th>#</th><th>'+
+        lbl('University code','الكود الجامعي')+'</th><th>'+
+        lbl('Student name','اسم الطالب')+'</th></tr></thead>'+
+        '<tbody id="advisor-roster-preview-rows">'+previewStudentRows(matching)+
+        '</tbody></table></div><p class="small muted">'+
+        lbl('All names are visible here for checking. Searching stays on this device.','جميع الأسماء متاحة للمراجعة هنا. البحث يتم على جهازك فقط.')+
+        '</p></div></div>'+
+        '<div><button class="btn btn-primary btn-sm" type="button" data-official-roster="upload" '+
+        (busy?'disabled':'')+'>'+
+        lbl('Submit roster for administrator approval','إرسال الكشف لاعتماد المدير')+
+        '</button></div></div>';
     }
     if(message)out+='<p class="alert alert-em small" role="status">'+html(message)+'</p>';
     if(error)out+='<p class="alert alert-ro small" role="alert">'+html(error)+'</p>';
@@ -194,14 +242,23 @@
   }
   function onWorkspace(on) {
     if(on&&advisor())void refresh();
-    if(!on){preview=null;expanded=null;batchMembers=[];}
+    if(!on){preview=null;previewFilter='';expanded=null;batchMembers=[];}
     render();
   }
   function bind() {
     if(started)return;started=true;
+    document.addEventListener('input',e=>{
+      if(e.target?.id!=='advisor-roster-preview-search'||!advisor()||!preview)return;
+      previewFilter=String(e.target.value||'');
+      const filtered=matchingPreviewStudents();
+      const rows=$r('advisor-roster-preview-rows');
+      const count=$r('advisor-roster-preview-count');
+      if(rows)rows.innerHTML=previewStudentRows(filtered);
+      if(count)count.textContent=filtered.length+' / '+preview.students.length;
+    });
     document.addEventListener('change',async e=>{
       if(e.target?.id!=='advisor-official-file'||!advisor())return;
-      error='';message='';preview=null;
+      error='';message='';preview=null;previewFilter='';
       try{preview=await parseFile(e.target.files?.[0]);}
       catch(x){error=x.message||String(x);}
       render();
