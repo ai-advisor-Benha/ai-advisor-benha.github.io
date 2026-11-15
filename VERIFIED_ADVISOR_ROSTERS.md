@@ -57,3 +57,23 @@ The supplied `StudentsData (1).xls` is an **HTML report** despite its `.xls` ext
 ## Test records
 
 The sample advisor report of 110 students is a private **user-supplied reference** only. It is *not* published to GitHub and must be uploaded by the authorized advisor into the secured workflow after administrative review. Do not use another person's university code and name with a made-up national ID to simulate full identity verification. Use institution-approved synthetic test accounts and test datasets.
+
+## Student-facing early advisor check
+
+Immediately after uploading an individual Ibn Al-Haytham transcript, the student interface now calls the **read-only**, signed-in `advisor_check_transcript_roster(p_student_id,p_student_number,p_student_name)` Supabase RPC. The three inputs are extracted from `ID Number`, `Students Number`, and `Student Name`; they are not entered manually by the student.
+
+- A mismatched/missing 14-digit national ID blocks verification.
+- A missing/invalid university student number or missing name blocks verification.
+- An exact university-code **and** normalized-name match in one currently approved official advisor roster yields a **Verified** badge and shows that roster's advisor name.
+- An administrator's previously verified explicit assignment is recognized as an exception.
+- No roster found, multiple matches, or an assignment conflict displays a clear explanation and a **Check again** button.
+- The **Send for Approval** button is disabled until there is both a nonempty academic plan and a current verified advisor match. The click handler rechecks the identity and matching status before downloading/sending a JSON request.
+- Any subsequent transcript change invalidates the earlier verification, preventing a stale match from being reused.
+- The browser never receives the full roster or another student's identity from this API. The existing database validation of actual submission is authoritative; editing the browser button cannot bypass it.
+- No Brevo notification is attempted for a rejected/blocked request. The existing online inbox and successful approval/notification behavior are unchanged.
+- Verification is an **advisor-assignment check**, not proof that a student really owns a university identity. Trusted university login/SIS integration remains the recommended long-term solution.
+
+### Validation
+- Database migration and official-roster test passed inside a rolled-back transaction: no match, wrong 14-digit ID, missing student details, exact match, different student code, and different full name.
+- Browser mock checks passed for verified student, blocked unmatched student, wrong national ID, invalidating a changed transcript and notification-only-after-approval checks.
+- Real faculty pilot still required; the database currently has no approved roster uploaded.

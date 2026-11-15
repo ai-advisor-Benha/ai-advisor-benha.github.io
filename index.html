@@ -346,6 +346,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.88rem}
       <p class="small muted mt-2" id="admin-demo-description"></p>
     </section>
     <section id="student-card" class="panel hidden" aria-label="Student information"></section>
+    <div id="student-advisor-verification" class="hidden" aria-live="polite"></div>
     <nav class="panel p-1 stepper" id="stepper" aria-label="Progress"></nav>
 
     <!-- STEP 1 -->
@@ -2791,6 +2792,8 @@ function ingestAOA(aoa, label, isSample) {
     $('tr-msg').innerHTML = `<div class="alert alert-em">${esc(label)} — ${esc(msg)}${tr.warning ? '<br>' + esc(tr.warning) : ''}</div>`;
     const at = autoTarget(); if (at) S.term = at.term;                  // target semester from the transcript
     recompute(); renderTranscript(); updateHeader(); renderStudentCard();
+    // Check the official advisor roster immediately after a valid transcript upload.
+    window.AdvisorInbox?.onTranscriptLoaded();
     logUsage('transcriptsLoaded'); if (S.depId) { usage.programs[S.depId] = (usage.programs[S.depId] || 0) + 1; saveUsage(); }
   } catch (e) { showTrError(e); }
 }
@@ -3277,6 +3280,9 @@ function renderDeadlines() {
 /* ---- Advisor approval: student side ---- */
 async function sendForApproval() {
   if (!S.plan.length) { alertToast(t('apEmpty')); return; }
+  // Preflight is read-only. Never download/send as a verified request until it passes.
+  if (S.session?.actualRole === 'student' &&
+      !(await window.AdvisorInbox?.verifyTranscript(true))) return;
   const r = await buildRequest(); S.lastRequest = r;
   logUsage('approvalRequests');
   download((isStudentDemo() ? 'DEMO-' : '') + 'approval-request-' + idTag(activeStudentId()) + '-' + S.term.toLowerCase() + '.json', JSON.stringify(r, null, 2), 'application/json');
@@ -3832,6 +3838,7 @@ function showWorkspace(on) {
   if (on) { renderAdvisorWS(); renderAdminPanel(); }
   window.AdvisorInbox?.onWorkspace(on);
   window.AdvisorRoster?.onWorkspace(on);
+  window.AdvisorInbox?.renderVerification();
 }
 
 function renderAutoPlan() {
@@ -4379,6 +4386,7 @@ function renderRegistration() {
     return `<div class="course"><div class="prio p${it.priority}"><span class="code">${esc(it.course.displayCode || it.code)}</span> ${esc(it.course.name)}<div class="small muted">${it.course.credits} h · ${esc(catLabel(it.cat))}${it.priority === 1 ? ' · ' + esc(t('p1')) : ''}</div></div><button class="btn ${over ? 'btn-ghost' : 'btn-primary'} btn-sm self-center" data-add="${esc(it.code)}" ${over ? 'aria-disabled="true" title="Exceeds credit cap"' : ''}>${esc(t('addPlan'))}</button></div>`;
   }).join('') || `<p class="panel-pad pt-0 muted small">${esc(t('emptyEligible'))}</p>`;
   buildPrintSheet(cap); renderDecision(); renderIbnBox();
+  window.AdvisorInbox?.updateSendButton();
 }
 function planRows() {
   const cat = fac().catalog, adv = currentAdvice();
