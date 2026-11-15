@@ -319,6 +319,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.88rem}
     <section id="advisor-ws" class="space-y-5 hidden">
       <div><h2 id="ws-title"></h2><p class="muted mt-1" id="ws-sub"></p></div>
       <div id="admin-panel" class="space-y-4 hidden"></div>
+      <div id="advisor-online-inbox" aria-live="polite"></div>
       <div class="panel panel-pad space-y-3">
         <h3 id="ws-review-title"></h3><p class="small muted" id="ws-review-sub"></p>
         <label class="dropzone block" id="dz-req"><input type="file" accept=".json,application/json" class="hidden" id="in-req"><span id="dz-req-text"></span></label>
@@ -453,6 +454,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.88rem}
         <div class="flex flex-wrap justify-between gap-3 items-center"><div><h3 id="ap-title"></h3><p class="small muted" id="ap-sub"></p></div>
           <div class="flex gap-2 flex-wrap"><button class="btn btn-primary btn-sm" id="btn-send-ap" type="button"></button><label class="btn btn-ghost btn-sm" tabindex="0" id="l-load-dec"><input type="file" accept=".json,application/json" class="hidden" id="in-dec"><span id="t-load-dec"></span></label></div></div>
         <div id="decision-box"></div>
+        <div id="student-online-requests" class="mt-3 hidden" aria-live="polite"></div>
       </div>
       <div class="panel panel-pad space-y-2" id="ibn-box"></div>
       <div class="grid lg:grid-cols-2 gap-5">
@@ -529,6 +531,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.88rem}
 <!-- Supabase: public publishable key is loaded from a separate config file. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0"></script>
 <script src="./supabase-config.js"></script>
+<script src="./advisor-inbox.js"></script>
 
 <script>
 /* =====================================================================
@@ -2509,6 +2512,7 @@ function logout(requestServer = true) {
   if (requestServer) apiRequest('/api/auth/logout', {}).catch(() => {});
   adminAccountsCache = {}; adminAccountsRevealed.clear(); adminAccountsRevealAll = false;
   adminAccountsLoadError = ''; adminAccountsSearch = ''; adminAccountsRole = 'all';
+  window.AdvisorInbox?.onLogout();
   S.session = null; S.demoMode = false; S.transcript = null; S.analysis = null; S.plan = []; S.step = 1; S.maxStep = 1; S.decision = null; S.lastRequest = null; advReview = null; S.ibn = null; S.ibnMissChecked = null; S.courseDecision = null;
   $('app').classList.add('hidden'); $('auth-screen').classList.remove('hidden');
   $('otp-card').classList.add('hidden'); $('recovery-card').classList.add('hidden'); $('login-card').classList.remove('hidden');
@@ -3273,6 +3277,8 @@ async function sendForApproval() {
   const r = await buildRequest(); S.lastRequest = r;
   logUsage('approvalRequests');
   download((isStudentDemo() ? 'DEMO-' : '') + 'approval-request-' + idTag(activeStudentId()) + '-' + S.term.toLowerCase() + '.json', JSON.stringify(r, null, 2), 'application/json');
+  // Preserve the downloadable JSON even if the secure online inbox is not configured.
+  if (window.AdvisorInbox) await window.AdvisorInbox.submit(r);
   renderDecision();
 }
 async function loadDecisionFile(file) {
@@ -3644,6 +3650,7 @@ function renderAdminPanel() {
       ${card(t('admRequests'), Object.values(usage.courseRequests || {}).reduce((s, v) => s + v, 0), t('admRequestsSub', { a: usage.approvalRequests || 0 }))}
     </div>
     ${renderAdminAccountSection()}
+    <div id="admin-advisor-assignments"></div>
     <div class="panel panel-pad space-y-3">
       <div class="flex flex-wrap justify-between gap-2 items-center"><h3>${esc(t('admBylawTitle'))}</h3><button class="btn btn-primary btn-sm" type="button" data-adm="upload">${esc(t('admUpload'))}</button></div>
       <p class="small muted">${esc(t('admBylawSub'))}</p>
@@ -3664,6 +3671,7 @@ function renderAdminPanel() {
         <div class="small" id="adm-msg" role="status"></div></div>
     </div>`;
   filterAdminAccountRows();
+  window.AdvisorInbox?.renderAdminAssignments();
 }
 async function adminAction(b) {
   const a = b.dataset.adm, msg = m => { const x = $('adm-msg'); if (x) x.textContent = m; else alertToast(m, 'em'); };
@@ -3733,6 +3741,11 @@ function renderAdvisorWS() {
       <div class="flex flex-wrap gap-2 justify-end"><button class="btn btn-ghost" type="button" data-decide="changes">${esc(t('advChanges'))}</button><button class="btn btn-primary" type="button" data-decide="approved">${esc(t('advApprove'))}</button></div>
       <p class="small muted">${esc(t('advDecisionNote'))}</p><div id="adv-mail-status" class="small" role="status" aria-live="polite"></div></div>`;
   }
+  if (advReview?.onlineId && advReview.onlineStatus !== 'pending') {
+    el.querySelectorAll('[data-decide]').forEach(b => b.disabled = true);
+    const statusEl = $('adv-mail-status');
+    if (statusEl) statusEl.textContent = LANG === 'ar' ? 'تمت مراجعة هذا الطلب بالفعل.' : 'This online request has already been reviewed.';
+  }
   // calendar form
   const c = calendar || {};
   $('cal-term').value = c.term || ''; CAL_FIELDS.forEach(k => { $('cal-' + k).value = c[k] || ''; });
@@ -3753,6 +3766,15 @@ async function decide(kind) {
   // Always retain the portable JSON decision as a fallback for manual delivery.
   download((r.demo ? 'DEMO-' : '') + 'advisor-decision-' + idTag(r.studentId) + '-' + r.term.toLowerCase() + '.json',
     JSON.stringify(d, null, 2), 'application/json');
+  // A decision for an online request must be persisted before any email attempt.
+  if (advReview.onlineId) {
+    try { await window.AdvisorInbox.saveDecision(advReview.onlineId, d); }
+    catch (e) {
+      $('adv-mail-status').style.color = 'var(--rose)';
+      $('adv-mail-status').textContent = (LANG === 'ar' ? 'تعذر حفظ القرار الإلكتروني: ' : 'Could not save online decision: ') + (e.message || String(e)) + (LANG === 'ar' ? ' — تم تنزيل ملف JSON كنسخة احتياطية.' : ' — Decision JSON downloaded as backup.');
+      return;
+    }
+  }
   logUsage(kind === 'approved' ? 'approvalsGiven' : 'changesRequested');
   const feedback = $('adv-mail-status');
   feedback.style.color = 'var(--ink)';
@@ -3778,7 +3800,7 @@ async function decide(kind) {
   } catch (e) {
     feedback.style.color = 'var(--rose)';
     feedback.textContent = (LANG === 'ar' ? 'تعذر إرسال إشعار البريد: ' : 'Email notification failed: ') + (e.message || String(e))
-      + (LANG === 'ar' ? ' — تم تنزيل ملف القرار لإرساله يدويًا.' : ' — Decision JSON was downloaded for manual delivery.');
+      + (advReview.onlineId ? (LANG === 'ar' ? ' — القرار محفوظ بالفعل في حساب الطالب الإلكتروني.' : ' — Online decision is already saved in the student account.') : (LANG === 'ar' ? ' — تم تنزيل ملف القرار لإرساله يدويًا.' : ' — Decision JSON was downloaded for manual delivery.'));
   } finally {
     advisorEmailSending = false;
     document.querySelectorAll('[data-decide]').forEach(b => b.disabled = false);
@@ -3802,6 +3824,7 @@ function showWorkspace(on) {
   $('btn-ws').textContent = t(on ? 'wsStudent' : adm ? 'admWs' : 'wsAdvisor');
   $('ws-title').textContent = t(adm ? 'admTitle' : 'wsTitle'); $('ws-sub').textContent = t(adm ? 'admSub' : 'wsSub');
   if (on) { renderAdvisorWS(); renderAdminPanel(); }
+  window.AdvisorInbox?.onWorkspace(on);
 }
 
 function renderAutoPlan() {
@@ -4603,6 +4626,7 @@ function bind() {
     el.addEventListener('drop', e => { e.preventDefault(); el.classList.remove('drag'); if (e.dataTransfer.files[0]) fn(e.dataTransfer.files[0]); });
     el.tabIndex = 0; el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $(inp).click(); } });
   }
+  window.AdvisorInbox?.bind();
 }
 function alertToast(msg, kind) {
   const d = document.createElement('div'); d.className = 'toast'; d.setAttribute('role', 'alert');
