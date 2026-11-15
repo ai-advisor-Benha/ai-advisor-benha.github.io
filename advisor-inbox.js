@@ -19,11 +19,11 @@
       codeIncorrect:'Please enter an advisor code in the format ADV- followed by 24 letters/numbers (A–F and 0–9).',
       notificationsFailed:'Request saved, but the advisor email notification was not sent: ',
       pendingTitle:'Pending approval',myAdvisorCode:'Your unique academic advisor code',
-      myAdvisorCodeHint:'Share this code only with students assigned to you. They enter it once when submitting their first request.',
+      myAdvisorCodeHint:'Legacy advisor code for supervised exceptions. Normal students are matched automatically through approved official Ibn Al-Haytham rosters.',
       copyCode:'Copy code',codeUnavailable:'Advisor code could not be loaded: ',
       filterLabel:'Filter requests',allFilter:'All requests', 
-      sending:'Submitting to your assigned advisor…',
-      sent:'Request saved in your advisor’s online inbox. Keep the downloaded JSON as backup.',
+      sending:'Matching the official advisor roster and submitting your plan…',
+      sent:'Request matched to your officially approved academic advisor and saved online. Keep the downloaded JSON as backup.',
       backup:'The JSON was downloaded, but online submission did not succeed: ',
       demo:'Student Demo Mode uses the existing JSON exchange; no sample record is uploaded.',
       unavailable:'Online inbox not configured. An administrator must apply the Supabase migration first.',
@@ -118,6 +118,7 @@
         </div>
       </form>` : ''}
       ${noticeWarning ? `<p class="alert alert-am small" role="status">${safe(noticeWarning)}</p>` : ''}
+      <p class="small muted" dir="auto">${safe(S.session?.role==='student' && typeof LANG!=='undefined' && LANG==='ar' ? 'يتم اختيار المرشد الأكاديمي تلقائياً من كشف ابن الهيثم المعتمد. تأكد من تطابق الكود الجامعي والاسم في ملفك. لا تحتاج إدخال بريد المرشد.' : 'Your advisor is selected automatically from an administrator-approved Ibn Al-Haytham roster using your university student number and full name. You do not need to enter an advisor email or code.')}</p>
       <div class="small muted">${safe(w().manual)}</div>
       ${requests.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>${safe(w().columns[1])}</th><th>${safe(w().columns[2])}</th><th>${safe(w().columns[3])}</th></tr></thead><tbody>
         ${requests.map(r => `<tr><td>${safe(r.term)} · ${safe(r.program)}</td><td>${status(r.status)}${r.decision?.comment ? `<div class="small muted" dir="auto">${safe(r.decision.comment)}</div>` : ''}</td><td class="small">${safe(fmt(r.created_at))}</td></tr>`).join('')}
@@ -160,21 +161,8 @@
     busySubmit=true;
     studentError=w().sending;noticeWarning='';renderStudent();
     try {
-      const selection=await c().from('advisor_student_assignments')
-        .select('advisor_id').eq('student_id',S.session.authUserId).maybeSingle();
-      if(selection.error)throw selection.error;
-      const code=String(enteredCode||'').trim().toUpperCase();
-      if(!selection.data && !code) {
-        pendingCodeRequest=r;
-        studentError=w().needCode;
-        renderStudent();
-        $('student-advisor-code')?.focus?.();
-        return false;
-      }
-      if(code && !/^ADV-[A-F0-9]{24}$/.test(code))
-        throw new Error(w().codeIncorrect);
-      const {data:requestId,error}=await c().rpc('advisor_submit_plan',
-        {p_request:r,p_advisor_code:code||null});
+      // Verified, approved Ibn Al-Haytham roster determines the advisor. No email/code guessing.
+      const {data:requestId,error}=await c().rpc('advisor_submit_verified_plan',{p_request:r});
       if(error)throw error;
       pendingCodeRequest=null;
       await refreshStudent();
