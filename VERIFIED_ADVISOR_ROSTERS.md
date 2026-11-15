@@ -33,6 +33,15 @@ The supplied `StudentsData (1).xls` is an **HTML report** despite its `.xls` ext
 - Students do not enter or search for an advisor's email as an authorization mechanism.
 - Review legal basis, institutional access policies, retention/deletion schedule, and Brevo sending rate limits before university-wide deployment.
 
+## Live rollout status — 15 November 2026
+
+- **GitHub PR #7 has been merged** into `main`.
+- Supabase migration `verified_official_advisor_rosters_20261115` has been applied and verified.
+- The two private roster tables and role-checked RPCs exist in the production Supabase project.
+- Synthetic transactional checks passed for private roster upload, administrative approval, student auto-routing, assigned advisor contact info, RLS isolation, replacement of older rosters, and rejection of mismatches. The synthetic transactions were rolled back.
+- Existing login accounts remain intact. **No actual 110-student roster has yet been uploaded or approved.** An authorized advisor must upload the official list in the live web interface, and a verified administrator must approve it before ordinary student submission works.
+- Before institutional launch, complete a real student/advisor acceptance test and verify Brevo delivery, SIS identity and privacy compliance.
+
 ## Deployment / acceptance checklist
 
 1. Apply `supabase/migrations/20261115_verified_official_advisor_rosters.sql` to the correct Supabase project. This migration installs the roster schema, role-checked APIs and an all-path insert trigger for advisor plan requests.
