@@ -2,3 +2,8 @@
 # Authentication is verified inside the Edge Function using Supabase Auth getUser(jwt).
 # The legacy gateway JWT check can reject modern signing keys.
 verify_jwt = false
+
+[functions.advisor-request-notify]
+# This Edge Function validates the signed-in student's JWT itself.
+# Match the existing decision email service's verified-jwt configuration.
+verify_jwt = false
