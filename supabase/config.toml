@@ -7,3 +7,7 @@ verify_jwt = false
 # This Edge Function validates the signed-in student's JWT itself.
 # Match the existing decision email service's verified-jwt configuration.
 verify_jwt = false
+
+[functions.bylaw-assistant]
+# Validates JWT with Auth and reads the existing profile under caller RLS.
+verify_jwt = false

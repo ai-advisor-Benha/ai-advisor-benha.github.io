@@ -1,0 +1,22 @@
+[Unit]
+Description=Benha Bylaw inference gateway
+After=network.target
+
+[Service]
+Type=simple
+User=bylaw
+Group=bylaw
+WorkingDirectory=/opt/bylaw
+EnvironmentFile=/etc/bylaw/gateway.env
+ExecStart=/usr/bin/node /opt/bylaw/inference/gateway.mjs
+Restart=on-failure
+StateDirectory=bylaw
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/bylaw
+
+[Install]
+WantedBy=multi-user.target

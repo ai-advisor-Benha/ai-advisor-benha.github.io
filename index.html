@@ -5,7 +5,7 @@
   Serve this index.html with the included Node.js server for real login and email recovery.
   Bundled: Tailwind CSS 3.4.17 (compiled); SheetJS 0.18.5 loaded from pinned CDNs (Apache-2.0). Fonts load from Google Fonts when online
   and fall back to system fonts offline. Advising data stays in the user's browser; account authentication is server-side.
-  AI assistant: opens the Claude version of the system, or define window.ADVISOR_AI to connect a model (see callModel).
+  AI assistant: authenticated Supabase gateway to a separately hosted open-source model.
 -->
 <html lang="en" dir="ltr">
 <head>
@@ -495,11 +495,12 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.88rem}
       <div><h2 id="qa-title"></h2><p class="small muted mt-1" id="qa-sub"></p></div>
       <button class="btn btn-ghost btn-sm" id="qa-close" type="button"></button>
     </div>
-    <div class="panel-pad space-y-3" id="qa-log" style="max-height:52vh;overflow-y:auto"></div>
+    <div class="panel-pad space-y-3" role="log" aria-live="polite" id="qa-log" style="max-height:52vh;overflow-y:auto"></div>
     <div class="panel-pad pt-0 space-y-2">
+      <p class="small muted" id="qa-privacy"></p>
       <div class="flex flex-wrap gap-2" id="qa-examples"></div>
       <form id="qa-form" class="flex gap-2" novalidate>
-        <textarea class="input" id="qa-input" rows="2" dir="auto" style="resize:vertical"></textarea>
+        <textarea class="input" id="qa-input" maxlength="1200" aria-label="Ask the Bylaw / اسأل اللائحة" rows="2" dir="auto" style="resize:vertical"></textarea>
         <div class="flex flex-col gap-2"><button class="btn btn-primary" id="qa-send" type="submit"></button><button class="btn btn-ghost btn-sm hidden" id="qa-stop" type="button"></button></div>
       </form>
       <p class="small" style="color:var(--rose)" id="qa-err" role="alert"></p>
@@ -536,6 +537,8 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.88rem}
 <script src="./supabase-config.js"></script>
 <script src="./advisor-inbox.js"></script>
 <script src="./advisor-roster.js"></script>
+<script src="./supabase/functions/_shared/bylaw-protocol.js"></script>
+<script src="./bylaw-assistant.js"></script>
 
 <script>
 /* =====================================================================
@@ -636,7 +639,7 @@ const I18N = {
     qaFab: 'Ask the bylaw', qaTitle: 'Bylaw assistant', qaSub: 'Ask in Arabic or English. Every number and eligibility decision is computed by the rules engine from your record and the bylaw; open “How this was checked” under an answer to verify it.',
     qaSend: 'Ask', qaStop: 'Stop', qaThinking: 'Thinking…', qaChecking: 'Checking the rules…', qaHow: 'How this was checked ({n} checks)', qaNoChecks: 'Answered without running any check — confirm with your academic advisor.', qaUnverified: 'Not computed by the rules engine: {n}. Verify this figure with your academic advisor.', qaPlaceholder: 'e.g. How many hours can I register if my GPA is 1.8?',
     qaExamples: ['How many hours can I register if my GPA is 1.8?', 'ما هو الحد الأقصى للساعات في الفصل الصيفي؟', 'What happens if I fail a course twice?', 'متى يمكنني التسجيل في مشروع التخرج؟'],
-    qaErr: { unavailable: 'The assistant is not connected to an AI model in this deployment.', not_granted: 'The assistant needs your permission to use Claude. Reload the page to be asked again.', rate_limited: 'Too many questions at once. Wait a moment, then ask again.', prompt_too_large: 'The question is too long. Shorten it and ask again.', refused: 'The assistant could not answer that question.', cancelled: '', other: 'The assistant is unavailable right now. Try again later.' },
+    qaErr: { unavailable: 'The assistant is not connected to an AI model in this deployment.', not_granted: 'Please sign in again.', rate_limited: 'Too many questions at once. Wait a moment, then ask again.', prompt_too_large: 'The question is too long. Shorten it and ask again.', refused: 'The assistant could not answer that question.', cancelled: '', other: 'The assistant is unavailable right now. Try again later.' },
     statsBtn: 'Pilot statistics', statsTitle: 'Pilot usage statistics', statsSub: 'Anonymous counters for the pilot evaluation. No names, IDs or grades are recorded.',
     statsThis: 'This browser', statsAll: 'All users ({n})', statsDownload: 'Download statistics (CSV)', statsEmpty: 'No activity recorded yet.',
     sampleLabel: 'Attached Ibn Al-Haytham transcript (anonymized)',
@@ -702,12 +705,6 @@ const I18N = {
     admNewCode: 'New administrator access code (at least 6 characters):', admDone: 'Done.',
     termAuto: 'automatic', termAutoNote: 'Chosen automatically: the semester after {last}, the latest in your transcript.', termManualNote: 'You changed the semester. The automatic choice from your transcript is {auto}.',
     ibnTermMismatch: 'This Ibn Al-Haytham file is for {file}, while you are planning {plan}. The check below is done for {file} using your record before that registration.',
-    qaLinkSub: 'The AI assistant runs on Claude.', qaLinkBody: 'On this website the AI assistant is not connected yet. If you have a Claude account, you can ask your questions in the Claude version of this same system.',
-    qaLinkSteps: ['Press “Open the Claude version” (it opens in a new tab).', 'Sign in to Claude if you are asked.', 'Choose your program and upload your Ibn Al-Haytham transcript there again — your data on this website is not transferred.', 'Press “Ask the bylaw” and ask in Arabic or English.'],
-    qaLinkBtn: 'Open the Claude version', qaLinkNote: 'No Claude account? Every other part of the system works fully here; ask your academic advisor for anything else.',
-    qaSigninBody: 'To use the AI assistant, sign in to your own Claude account. Answers then use your account, not anyone else\'s.',
-    qaSigninSteps: ['Press “Sign in to Claude” (it opens in a new tab) and sign in, or create an account.', 'Come back to this tab and reload the page.', 'Upload your transcript again, press “Ask the bylaw” and allow Claude when it asks for your permission.'],
-    qaSigninBtn: 'Sign in to Claude',
     langBtn: 'العربية',
     errStaff: 'Staff ID must be 4–14 digits.', errRole: 'This account is registered as {r}. Choose that role to sign in.',
     role: 'I am signing in as', roleStudent: 'Student', roleAdvisor: 'Academic advisor', staffId: 'Staff ID',
@@ -885,7 +882,7 @@ I18N.ar = {
   qaNoChecks: 'أُجيب دون إجراء أي فحص — تأكد من مرشدك الأكاديمي.', qaUnverified: 'لم يحسبه محرك القواعد: {n}. تحقق من هذا الرقم مع مرشدك الأكاديمي.',
   qaPlaceholder: 'مثال: كم ساعة أقدر أسجل لو معدلي 1.8؟',
   qaExamples: ['كم ساعة أقدر أسجل لو معدلي 1.8؟', 'ما هو الحد الأقصى للساعات في الفصل الصيفي؟', 'ماذا يحدث إذا رسبت في مقرر مرتين؟', 'متى يمكنني التسجيل في مشروع التخرج؟'],
-  qaErr: { unavailable: 'المساعد غير متصل بنموذج ذكاء اصطناعي في هذا التشغيل.', not_granted: 'يحتاج المساعد إذنك لاستخدام Claude. أعد تحميل الصفحة ليُطلب منك مجددًا.', rate_limited: 'أسئلة كثيرة في وقت واحد. انتظر قليلًا ثم اسأل مرة أخرى.', prompt_too_large: 'السؤال طويل جدًا. اختصره ثم اسأل مجددًا.', refused: 'لم يتمكن المساعد من الإجابة على هذا السؤال.', cancelled: '', other: 'المساعد غير متاح حاليًا. حاول لاحقًا.' },
+  qaErr: { unavailable: 'المساعد غير متصل بنموذج ذكاء اصطناعي في هذا التشغيل.', not_granted: 'يرجى تسجيل الدخول مجددًا.', rate_limited: 'أسئلة كثيرة في وقت واحد. انتظر قليلًا ثم اسأل مرة أخرى.', prompt_too_large: 'السؤال طويل جدًا. اختصره ثم اسأل مجددًا.', refused: 'لم يتمكن المساعد من الإجابة على هذا السؤال.', cancelled: '', other: 'المساعد غير متاح حاليًا. حاول لاحقًا.' },
   statsBtn: 'إحصاءات التجربة', statsTitle: 'إحصاءات استخدام التجربة', statsSub: 'عدادات مجهولة الهوية لتقييم التجربة. لا تُسجَّل أسماء أو أرقام أو درجات.',
   statsThis: 'هذا المتصفح', statsAll: 'كل المستخدمين ({n})', statsDownload: 'تنزيل الإحصاءات (CSV)', statsEmpty: 'لا يوجد نشاط مسجّل بعد.',
   sampleLabel: 'بيان حالة ابن الهيثم التجريبي (بدون بيانات شخصية)',
@@ -953,12 +950,6 @@ I18N.ar = {
   admNewCode: 'رمز دخول المسؤول الجديد (6 أحرف على الأقل):', admDone: 'تم.',
   termAuto: 'تلقائي', termAutoNote: 'تم الاختيار تلقائيًا: الفصل التالي بعد {last}، آخر فصل في بيان حالتك.', termManualNote: 'غيّرت الفصل. الاختيار التلقائي من بيان حالتك هو {auto}.',
   ibnTermMismatch: 'ملف ابن الهيثم هذا لفصل {file}، بينما تخطط لفصل {plan}. الفحص التالي يتم لفصل {file} باستخدام سجلك قبل ذلك التسجيل.',
-  qaLinkSub: 'يعمل مساعد اللائحة باستخدام Claude.', qaLinkBody: 'مساعد الذكاء الاصطناعي غير متصل على هذا الموقع حتى الآن. إذا كان لديك حساب Claude يمكنك طرح أسئلتك في نسخة Claude من نفس النظام.',
-  qaLinkSteps: ['اضغط «فتح نسخة Claude» (تفتح في علامة تبويب جديدة).', 'سجّل الدخول إلى Claude إذا طُلب منك.', 'اختر برنامجك وارفع بيان حالتك من ابن الهيثم هناك مرة أخرى — بياناتك على هذا الموقع لا تنتقل.', 'اضغط «اسأل عن اللائحة» واسأل بالعربية أو الإنجليزية.'],
-  qaLinkBtn: 'فتح نسخة Claude', qaLinkNote: 'ليس لديك حساب Claude؟ كل أجزاء النظام الأخرى تعمل هنا بالكامل؛ واسأل مرشدك الأكاديمي عن أي شيء آخر.',
-  qaSigninBody: 'لاستخدام مساعد الذكاء الاصطناعي سجّل الدخول إلى حساب Claude الخاص بك. تُستخدم حينها حسابك أنت وليس حساب أي شخص آخر.',
-  qaSigninSteps: ['اضغط «تسجيل الدخول إلى Claude» (يفتح في علامة تبويب جديدة) وسجّل الدخول أو أنشئ حسابًا.', 'ارجع إلى هذه الصفحة وأعد تحميلها.', 'ارفع بيان حالتك مرة أخرى، واضغط «اسأل عن اللائحة»، ووافق عندما يطلب Claude إذنك.'],
-  qaSigninBtn: 'تسجيل الدخول إلى Claude',
   langBtn: 'English',
   errStaff: 'يجب أن يتكون الرقم الوظيفي من 4 إلى 14 رقمًا.', errRole: 'هذا الحساب مسجّل بصفة {r}. اختر هذه الصفة لتسجيل الدخول.',
   role: 'أسجّل الدخول بصفتي', roleStudent: 'طالب', roleAdvisor: 'مرشد أكاديمي', staffId: 'الرقم الوظيفي',
@@ -2513,6 +2504,7 @@ async function completeRecovery(e) {
   finally { authBusy('recovery-complete', false); }
 }
 function logout(requestServer = true) {
+  resetQA(); // Clear this account’s AI conversation and cancel in-flight requests.
   if (requestServer) apiRequest('/api/auth/logout', {}).catch(() => {});
   adminAccountsCache = {}; adminAccountsRevealed.clear(); adminAccountsRevealAll = false;
   adminAccountsLoadError = ''; adminAccountsSearch = ''; adminAccountsRole = 'all';
@@ -4021,22 +4013,21 @@ async function openStats() {
      was checked") so a student or advisor can verify it.
    - After the answer, any GPA-style figure that no tool produced is
      flagged as unverified.
-   - Provider-independent: the tools are plain functions. Inside claude.ai
-     the model is reached through the page's "sample" capability; on a
-     university server, set window.ADVISOR_AI (see callModel) to call any
-     model with tool use (e.g. the Anthropic Messages API) from the backend.
+   - Supabase authenticates existing accounts; an independent self-hosted
+     model receives only filtered read-only tool results. No AI account is needed.
    ===================================================================== */
-let sampleCap = null, qaTurns = [], qaCtl = null, qaLinkMode = false;
-// Claude version of this system (the AI assistant works there for anyone with a Claude account)
-const CLAUDE_VERSION_URL = 'https://claude.ai/artifact/4PxtkJ7WqkK1BvuHFdYtKa';
-(async () => {
-  try {
-    if (window.claude && window.claude.use) sampleCap = await window.claude.use('sample');
-  } catch (e) { sampleCap = null; }
-  if (sampleCap || typeof window.ADVISOR_AI === 'function') $('qa-fab').classList.remove('hidden');
-  else if (!window.claude) { qaLinkMode = 'website'; $('qa-fab').classList.remove('hidden'); }   // standalone website: offer the Claude version
-  else { qaLinkMode = 'signin'; $('qa-fab').classList.remove('hidden'); }                           // Claude version, visitor not signed in / no access: offer sign-in
-})();
+let qaTurns = [], qaCtl = null, qaBusy = false, qaGeneration = 0, qaContext = null;
+Object.assign(I18N.en, {qaFab:'Ask the Bylaw', qaTitle:'Ask the Bylaw', qaSub:'Ask in English or Arabic. The academic engine supplies the facts; AI explains them. Check the evidence and bylaw articles below each answer.'});
+Object.assign(I18N.ar, {qaFab:'اسأل اللائحة', qaTitle:'اسأل اللائحة', qaSub:'اسأل بالعربية أو الإنجليزية. محرك القواعد يحدد النتائج والذكاء الاصطناعي يشرحها. راجع الأدلة ومواد اللائحة أسفل كل إجابة.'});
+function qaSnapshot() { return [S.session,S.transcript,S.uniId,S.facId,S.depId,S.term,S.assumeIP,S.gradException,S.plan.join('|')]; }
+function qaSame(a,b) { return a && b && a.length===b.length && a.every((v,i)=>v===b[i]); }
+function resetQA() {
+  qaGeneration++; qaCtl?.abort(); qaCtl=null; qaBusy=false; qaTurns=[]; qaContext=null;
+  if($('qa-log'))$('qa-log').textContent='';
+  if($('qa-input'))$('qa-input').value='';
+  if($('qa-err'))$('qa-err').textContent='';
+}
+$('qa-fab').classList.remove('hidden');
 
 /* ---- helpers used by the tools ---- */
 function agentNeedProgram() { if (!dept()) throw new Error('No program selected. Ask the student to choose their faculty and program in step 2.'); }
@@ -4214,35 +4205,8 @@ const AGENT_TOOLS = [
     } }
 ];
 
-function agentInstructions() {
-  const u = uni(), f = dept() ? fac() : rawFac(), d = dept();
-  return `You are the academic advising assistant of ${u.name}, ${f.name}${d ? ', program: ' + d.name : ''}.
-
-STRICT RULES — follow all of them:
-1. Use the tools for EVERY fact about this student or the bylaw: GPA, hours, eligibility, credit limits, prerequisites, grades, plans, rules. Never compute or estimate these yourself and never answer them from memory.
-2. Quote numbers exactly as the tools return them. Do not round, recalculate or combine them into new figures.
-3. For "can I take X" call check_course; for credit hours call credit_limit; for "what if I get…" call what_if_gpa; for "what should I register" call suggest_plan; for graduation progress call graduation_status; for "when will I graduate" or long-term planning call graduation_roadmap; for general rules call lookup_rule. Call get_student_record first when the student's own situation matters.
-4. Cite the bylaw article returned by the tool for each rule you state (e.g. "Art. 9-c").
-5. If a tool returns an error, or the bylaw data does not cover the question (fees, transfers, excuses, exam dates, timetables, anything not in the tools), say clearly that the system cannot confirm it and advise contacting the academic advisor or student affairs. Never guess.
-6. Reply in the same language as the student's question (Arabic or English). Be short and practical: the direct answer first, then the reason, then what to do next.
-7. Stay on academic registration and bylaw topics only.
-8. End with one short line reminding that the academic advisor's approval is still required for registration decisions.
-The semester the student is planning in the system is ${S.term}${termYearFor(S.term) ? ' ' + termYearFor(S.term) : ''}${autoTarget() && autoTarget().term === S.term ? ' (the next semester after the latest one in the transcript)' : ''}.`;
-}
-
-/* ---- provider adapter: the only part that depends on where the system runs ---- */
-async function callModel(messages, tools, onText, signal) {
-  if (sampleCap) {
-    return sampleCap(messages, { tools, onText, signal, cache: false, modelTier: 'default' });
-  }
-  if (typeof window.ADVISOR_AI === 'function') {
-    // Self-hosted deployment: window.ADVISOR_AI({messages, tools, onText, signal}) must send the
-    // conversation and tool schemas to the university backend, run tool calls through tools[i].execute,
-    // and resolve {text}. Keep the model API key on the server, never in this page.
-    return window.ADVISOR_AI({ messages, tools, onText, signal });
-  }
-  throw { code: 'unavailable', message: 'No AI model is connected.' };
-}
+// Model access is exclusively through the authenticated Supabase gateway.
+// Existing AGENT_TOOLS above remain the only academic calculation implementation.
 
 /* ---- verification: figures in the answer must come from tool results ---- */
 function unverifiedFigures(answer, trace, question) {
@@ -4271,50 +4235,52 @@ function traceSummary(tc) {
   return tc.name;
 }
 
-function renderQA(streaming) {
-  if (!qaLinkMode) $('qa-sub').textContent = t('qaSub');
-  $('qa-log').innerHTML = qaTurns.map(m => {
-    if (m.role === 'user') return `<div class="qa-msg qa-user" dir="auto"><span class="qa-text">${esc(m.content)}</span></div>`;
-    const checks = (m.trace || []);
-    return `<div class="qa-msg qa-bot" dir="auto"><span class="qa-text">${esc(m.content || (checks.length ? t('qaChecking') : t('qaThinking')))}</span>
-      ${m.unverified && m.unverified.length ? `<div class="alert alert-am small mt-2" dir="ltr">${esc(t('qaUnverified', { n: m.unverified.join(', ') }))}</div>` : ''}
-      ${checks.length ? `<details class="small mt-2" dir="ltr"><summary class="cursor-pointer muted">${esc(t('qaHow', { n: checks.length }))}</summary><ul class="list-disc ps-5 mt-1 space-y-1">${checks.map(tc => `<li>${esc(traceSummary(tc))}</li>`).join('')}</ul></details>` :
-        (m.content && !streaming && m.done ? `<div class="small muted mt-2" dir="ltr">${esc(t('qaNoChecks'))}</div>` : '')}
-    </div>`;
+function renderQA() {
+  $('qa-sub').textContent=t('qaSub');
+  $('qa-privacy').textContent=LANG==='ar'
+    ? 'يُرسل السؤال ونتائج أكاديمية محدودة إلى خادم النموذج. لا يُرسل بيان الحالة الكامل أو بيانات الحساب. لا تكتب أسماء أو أرقام هوية أو بيانات اتصال. الإجابات توضيحية وتتطلب مراجعة المرشد.'
+    : 'Your question and limited academic results are sent to the model server. Full transcripts and account details are not sent. Do not enter names, IDs or contact details. AI explanations require advisor review.';
+  $('qa-log').innerHTML=qaTurns.map(m=>{
+    const checks=m.trace||[];
+    const evidence=checks.map(tc=>'<li><b>'+esc(BylawAssistant.toolName(tc.name,LANG))+'</b><pre dir="auto" style="font:inherit;white-space:pre-wrap;overflow-wrap:anywhere">'+esc(tc.error?BylawProtocol.message('no_evidence',LANG):BylawAssistant.evidenceText(tc.result,LANG))+'</pre></li>').join('');
+    return '<div class="qa-msg '+(m.role==='user'?'qa-user':'qa-bot')+'" dir="auto"><span class="qa-text">'+esc(m.content||(qaBusy?t('qaChecking'):''))+'</span>'+
+      (m.unverified?.length?'<div class="alert alert-am small">'+esc(t('qaUnverified',{n:m.unverified.join(', ')}))+'</div>':'')+
+      (checks.length?'<details class="small mt-2"><summary>'+esc(t('qaHow',{n:checks.length}))+'</summary><p>'+esc(LANG==='ar'?'نتائج محرك القواعد المحلي ومواد اللائحة؛ تعتمد على الملف واللائحة المختارين.':'Local academic engine results and bylaw articles; based on the selected record and bylaw.')+'</p><ul>'+evidence+'</ul></details>':'')+'</div>';
   }).join('');
-  $('qa-log').scrollTop = $('qa-log').scrollHeight;
-  $('qa-send').disabled = !!streaming; $('qa-stop').classList.toggle('hidden', !streaming);
+  $('qa-log').scrollTop=$('qa-log').scrollHeight;
+  $('qa-send').disabled=qaBusy; $('qa-stop').classList.toggle('hidden',!qaBusy);
 }
 async function askQA(q) {
-  q = (q || '').trim(); if (!q) return;
-  $('qa-err').textContent = '';
-  const history = qaTurns.filter(m => m.content).map(m => ({ role: m.role, content: m.content })).slice(-10);
-  const msg = { role: 'assistant', content: '', trace: [], done: false };
-  qaTurns.push({ role: 'user', content: q }, msg);
-  renderQA(true); logUsage('questionsAsked');
-  const tools = AGENT_TOOLS.map(tl => ({ name: tl.name, description: tl.description, ...(tl.inputSchema ? { inputSchema: tl.inputSchema } : {}),
-    execute: input => {
-      const rec = { name: tl.name, input: input || {} }; msg.trace.push(rec);
-      try { rec.result = tl.run(input || {}); return rec.result; }
-      catch (e) { rec.error = e.message || String(e); throw e; }
-      finally { renderQA(true); }
-    } }));
-  qaCtl = new AbortController();
-  try {
-    const { text } = await callModel(
-      [{ role: 'user', content: agentInstructions() }, { role: 'assistant', content: 'Understood. I will use the tools for every fact and cite the articles.' }, ...history, { role: 'user', content: q }],
-      tools, ({ text }) => { msg.content = text; renderQA(true); }, qaCtl.signal);
-    msg.content = text;
-  } catch (e) {
-    if (e && e.text) msg.content = e.text;
-    else { qaTurns.splice(qaTurns.indexOf(msg) - 1, 2); }
-    const E = t('qaErr'); const m = E[e && e.code] ?? E.other;
-    if (m) $('qa-err').textContent = m;
-    if (e && e.code === 'not_granted') $('qa-fab').classList.add('hidden');
+  q=String(q||'').trim();if(!q||qaBusy)return;
+  if(!S.session){$('qa-err').textContent=BylawProtocol.message('unauthorized',LANG);return;}
+  if(!dept()){$('qa-err').textContent=LANG==='ar'?'اختر البرنامج الأكاديمي أولًا.':'Select your academic program first.';return;}
+  if(q.length>BylawProtocol.LIMITS.question){$('qa-err').textContent=BylawProtocol.message('invalid_input',LANG);return;}
+  const snapshot=qaSnapshot();
+  if(qaContext&&!qaSame(qaContext,snapshot))resetQA();
+  qaContext=snapshot;
+  const generation=++qaGeneration, language=/[\u0600-\u06ff]/.test(q)?'ar':/[A-Za-z]/.test(q)?'en':LANG;
+  const controller=new AbortController();qaCtl=controller;qaBusy=true;
+  const privateValues=[S.session.email,S.session.sid,S.transcript?.student?.name,S.transcript?.student?.number,S.transcript?.student?.nationalId];
+  const msg={role:'assistant',content:'',trace:[]};
+  const history=qaTurns.filter(turn=>turn.role==='user').slice(-2).map(turn=>turn.content);
+  qaTurns.push({role:'user',content:BylawProtocol.redact(q,privateValues)},msg);
+  qaTurns=qaTurns.slice(-12);$('qa-err').textContent='';renderQA();logUsage('questionsAsked');
+  try{
+    const answer=await window.BylawAssistant.ask({question:q,language,history,
+      context:{program:dept().name,term:S.term,hasTranscript:!!S.analysis},privateValues,
+      tools:AGENT_TOOLS.map(tool=>({name:tool.name,execute:input=>tool.run(input)})),
+      invoke:window.BylawAssistant.invoke,signal:controller.signal,
+      isCurrent:()=>generation===qaGeneration&&qaSame(snapshot,qaSnapshot()),
+      onEvidence:record=>{msg.trace.push(record);renderQA();}});
+    msg.content=answer.text;
+    msg.unverified=unverifiedFigures(msg.content,msg.trace,q);
+  }catch(e){
+    if(generation!==qaGeneration)return;
+    if(e?.code==='context_changed'){resetQA();$('qa-err').textContent=BylawProtocol.message('context_changed',language);return;}
+    msg.content=controller.signal.aborted?(language==='ar'?'تم إيقاف الإجابة.':'Answer stopped.'):BylawProtocol.message(e?.code,language);
+  }finally{
+    if(generation===qaGeneration){qaBusy=false;qaCtl=null;renderQA();}
   }
-  msg.done = true;
-  if (msg.content) msg.unverified = unverifiedFigures(msg.content, msg.trace, q);
-  renderQA(false);
 }
 
 /* ---- Target semester chosen automatically from the transcript ----
@@ -4590,17 +4556,8 @@ function bind() {
   $('adv-list').addEventListener('click', e => { const m = e.target.closest('[data-map]'); if (!m) return; S.mapSel = S.mapSel === m.dataset.map ? null : m.dataset.map; renderAdvising(); });
   window.addEventListener('resize', () => { if (S.advTab === 'map' && S.mapSel && S.step === 4) renderAdvising(); });
   $('qa-fab').onclick = () => {
-    $('qa').classList.remove('hidden');
-    $('qa-form').classList.toggle('hidden', qaLinkMode); $('qa-examples').classList.toggle('hidden', qaLinkMode);
-    if (qaLinkMode) {
-      const site = qaLinkMode === 'website';
-      $('qa-sub').textContent = t('qaLinkSub');
-      $('qa-log').innerHTML = `<div class="space-y-3"><p>${esc(t(site ? 'qaLinkBody' : 'qaSigninBody'))}</p><ol class="list-decimal ps-5 space-y-1 small">${t(site ? 'qaLinkSteps' : 'qaSigninSteps').map(s => `<li>${esc(s)}</li>`).join('')}</ol>
-        <a class="btn btn-primary" href="${site ? CLAUDE_VERSION_URL : 'https://claude.ai/login'}" target="_blank" rel="noopener">${esc(t(site ? 'qaLinkBtn' : 'qaSigninBtn'))}</a>
-        <p class="small muted">${esc(t('qaLinkNote'))}</p></div>`;
-      return;
-    }
-    renderQA(false); $('qa-input').focus();
+    if(qaContext&&!qaSame(qaContext,qaSnapshot()))resetQA();
+    $('qa').classList.remove('hidden');renderQA();$('qa-input').focus();
   };
   $('qa-close').onclick = () => { qaCtl && qaCtl.abort(); $('qa').classList.add('hidden'); };
   $('qa-stop').onclick = () => qaCtl && qaCtl.abort();

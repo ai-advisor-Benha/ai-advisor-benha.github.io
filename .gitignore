@@ -1,0 +1,8 @@
+# Inference secrets and model/runtime artifacts must never reach GitHub Pages.
+.env
+.env.*
+!.env.example
+*.gguf
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
