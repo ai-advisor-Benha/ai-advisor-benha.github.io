@@ -178,6 +178,19 @@ begin
   if v_advisor is null then
     raise exception 'No academic advisor is assigned to your account. Contact the administrator. The downloaded JSON can still be shared manually.';
   end if;
+  -- Idempotent retry and modest per-student safeguards for enrollment peaks.
+  select id into v_id from public.advisor_plan_requests
+    where student_id = v_student and fingerprint = v_fp and status = 'pending'
+    limit 1;
+  if v_id is not null then return v_id; end if;
+  if (select count(*) from public.advisor_plan_requests
+      where student_id = v_student and status = 'pending') >= 20 then
+    raise exception 'Too many pending plans. Contact your academic advisor before submitting more.';
+  end if;
+  if (select count(*) from public.advisor_plan_requests
+      where student_id = v_student and created_at >= now() - interval '1 hour') >= 30 then
+    raise exception 'Too many submissions. Please try again later.';
+  end if;
   insert into public.advisor_plan_requests (
     student_id, advisor_id, student_name, student_email,
     term, program, fingerprint, request
