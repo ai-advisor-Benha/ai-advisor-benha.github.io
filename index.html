@@ -3804,7 +3804,10 @@ async function decide(kind) {
       + (advReview.onlineId ? (LANG === 'ar' ? ' — القرار محفوظ بالفعل في حساب الطالب الإلكتروني.' : ' — Online decision is already saved in the student account.') : (LANG === 'ar' ? ' — تم تنزيل ملف القرار لإرساله يدويًا.' : ' — Decision JSON was downloaded for manual delivery.'));
   } finally {
     advisorEmailSending = false;
-    document.querySelectorAll('[data-decide]').forEach(b => b.disabled = false);
+    // Online decisions are final for this request; keep action buttons disabled.
+    document.querySelectorAll('[data-decide]').forEach(b => {
+      b.disabled = Boolean(advReview?.onlineId && advReview.onlineStatus !== 'pending');
+    });
   }
 }
 async function saveCalendarForm() {
