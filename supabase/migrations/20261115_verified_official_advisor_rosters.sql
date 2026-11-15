@@ -276,3 +276,33 @@ grant execute on function public.advisor_roster_norm(text) to authenticated;
 grant execute on function public.advisor_upload_official_roster(text,text,text,text,jsonb) to authenticated;
 grant execute on function public.advisor_review_official_roster(uuid,boolean) to authenticated;
 grant execute on function public.advisor_submit_verified_plan(jsonb) to authenticated;
+
+
+-- Students can contact only their OWN assigned advisor; no public directory or roster listing.
+create or replace function public.advisor_my_linked_advisor()
+returns jsonb language plpgsql security definer set search_path = ''
+as $fn$
+declare
+  v_student uuid := auth.uid();
+  v_role text;
+  v_email text;
+  v_name text;
+  v_advisor uuid;
+begin
+  select role into v_role from public.advisor_profiles where id=v_student;
+  if v_role is distinct from 'student' then
+    raise exception 'Student sign-in required.' using errcode='42501';
+  end if;
+  select a.advisor_id,p.email into v_advisor,v_email
+    from public.advisor_student_assignments a
+    join public.advisor_profiles p on p.id=a.advisor_id and p.role in ('advisor','admin')
+    where a.student_id=v_student;
+  if v_advisor is null then return null; end if;
+  select b.advisor_name into v_name from public.advisor_roster_batches b
+  where b.advisor_id=v_advisor and b.status='approved'
+  order by b.reviewed_at desc limit 1;
+  return jsonb_build_object('name',coalesce(v_name,''),'email',coalesce(v_email,''));
+end;
+$fn$;
+revoke all on function public.advisor_my_linked_advisor() from public,anon;
+grant execute on function public.advisor_my_linked_advisor() to authenticated;
