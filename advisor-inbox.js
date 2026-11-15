@@ -3,7 +3,7 @@
    Keep all privileges in Postgres RLS/SECURITY DEFINER, never in browser role toggles. */
 (() => {
   'use strict';
-  let inbox = [], requests = [], assignments = [], inboxPage = 0, inboxCount = 0;
+  let inbox = [], requests = [], assignments = [], linkedAdvisor = null, inboxPage = 0, inboxCount = 0;
   let advisorError = '', studentError = '', adminError = '', assignmentMessage = '';
   let busySubmit = false, refreshTimer = null, bound = false;
   let pendingCodeRequest = null, advisorCode = '', advisorCodeError = '', noticeWarning = '';
@@ -105,6 +105,7 @@
         <h3>${safe(w().title)}</h3>
         <button type="button" class="btn btn-ghost btn-sm" data-inbox-action="student-refresh">${safe(w().refresh)}</button>
       </div>
+      ${linkedAdvisor?.email ? `<div class="panel panel-pad small" dir="auto"><strong>${safe(typeof LANG!=='undefined' && LANG==='ar' ? 'مرشدك الأكاديمي المعتمد' : 'Your verified academic advisor')}:</strong> ${safe(linkedAdvisor.name || '')} — <a href="mailto:${encodeURIComponent(linkedAdvisor.email)}">${safe(linkedAdvisor.email)}</a></div>` : ''}
       ${studentError ? `<div class="alert alert-am small" role="status">${safe(studentError)}</div>` : ''}
       ${pendingCodeRequest ? `<form id="student-advisor-code-form" class="panel panel-pad space-y-3" autocomplete="off">
         <p class="small">${safe(w().needCode)}</p>
@@ -135,6 +136,8 @@
         .eq('student_id', S.session.authUserId).order('created_at',{ascending:false}).limit(20);
       if (error) throw error;
       requests = data || []; studentError = '';
+      const linked = await c().rpc('advisor_my_linked_advisor');
+      if (!linked.error) linkedAdvisor = linked.data || null;
       if (S.analysis && S.plan.length && S.depId) {
         const fp = await planFingerprint({
           studentId:activeStudentId(), term:S.term, plan:S.plan,
@@ -370,7 +373,7 @@
   }
   function onLogout() {
     if (refreshTimer) clearInterval(refreshTimer);
-    refreshTimer=null; inbox=[];requests=[];assignments=[];advisorError='';studentError='';adminError='';
+    refreshTimer=null; inbox=[];requests=[];assignments=[];linkedAdvisor=null;advisorError='';studentError='';adminError='';
     assignmentMessage='';inboxPage=0;inboxCount=0;advisorCode='';advisorCodeError='';
     pendingCodeRequest=null;noticeWarning='';advisorFilter='all';
   }
