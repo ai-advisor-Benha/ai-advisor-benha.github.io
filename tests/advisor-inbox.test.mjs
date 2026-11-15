@@ -101,7 +101,7 @@ test('advisor inbox loads assigned rows and saves decisions through the RPC',asy
 test('admin assignment panel exposes email-based assignment form',async()=>{
   const x=app('admin');
   await x.api.refreshAdminAssignments();
-  assert.match(x.elements.get('admin-advisor-assignments').innerHTML,/Assign students/);
+  assert.match(x.elements.get('admin-advisor-assignments').innerHTML,/Manual advisor assignment/);
   assert.match(x.elements.get('admin-advisor-assignments').innerHTML,/assign-student-email/);
 });
 
