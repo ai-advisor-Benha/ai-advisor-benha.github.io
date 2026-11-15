@@ -8,7 +8,8 @@ import vm from 'node:vm';
 const source = readFileSync(new URL('../advisor-inbox.js', import.meta.url), 'utf8');
 
 function app(role, {
-  actualRole = role, rows = [], rpcError = null, advisorReview = null, assigned = true, notifyError = null
+  actualRole = role, rows = [], rpcError = null, advisorReview = null, assigned = true, notifyError = null,
+  preflightStatus = 'verified'
 } = {}) {
   const elements = new Map();
   const calls = [];
@@ -22,8 +23,9 @@ function app(role, {
     return elements.get(id);
   };
   const S = {
-    session:{role,actualRole,authUserId:'user-1',email:'student@example.edu'},
-    analysis:null,plan:[],depId:null,advisorView:role==='advisor'
+    session:{role,actualRole,authUserId:'user-1',email:'student@example.edu',sid:'12345678901234'},
+    transcript:{student:{nationalId:'12345678901234',number:'99912345',name:'طالب اختبار تجريبي كامل'}},
+    analysis:null,plan:['CS101'],depId:null,advisorView:role==='advisor'
   };
   let lastTable='';
   const query = {
@@ -37,7 +39,9 @@ function app(role, {
     functions:{async invoke(name,args){calls.push(['invoke',name,args]);return notifyError ? {error:{message:notifyError}} : {data:{ok:true},error:null}}},
     async rpc(name,args) {
       calls.push(['rpc',name,args]);
-      return rpcError ? {error:{message:rpcError}} : {data:name==='advisor_get_my_code'?'ADV-'+'A'.repeat(24):'11111111-1111-4111-8111-111111111111',error:null};
+      return rpcError ? {error:{message:rpcError}} : {data:name==='advisor_check_transcript_roster' ?
+        {status:preflightStatus,advisorName:'Official Test Advisor',method:'official_roster'} :
+        name==='advisor_get_my_code'?'ADV-'+'A'.repeat(24):'11111111-1111-4111-8111-111111111111',error:null};
     }
   });
   const context = {
@@ -73,7 +77,7 @@ test('student submission invokes the authenticated online RPC', async()=>{
 test('offline or unassigned student retains the downloadable-JSON fallback message',async()=>{
   const x=app('student',{rpcError:'No academic advisor is assigned'});
   assert.equal(await x.api.submit(request),false);
-  assert.match(x.elements.get('student-online-requests').innerHTML,/No academic advisor/);
+  assert.match(x.elements.get('student-advisor-verification').innerHTML,/Verification could not be completed/);
 });
 
 test('owner demo account does not submit a sample transcript to the online backend',async()=>{
@@ -115,7 +119,7 @@ test('new student is matched automatically without advisor email or code',async(
 test('student cannot submit without matching an approved official roster',async()=>{
   const x=app('student',{assigned:false,rpcError:'not found in any approved academic advisor roster'});
   assert.equal(await x.api.submit(request),false);
-  assert.match(x.elements.get('student-online-requests').innerHTML,/approved academic advisor roster/);
+  assert.match(x.elements.get('student-advisor-verification').innerHTML,/Verification could not be completed/);
 });
 
 test('manually entered legacy code does not replace official roster matching',async()=>{
@@ -136,4 +140,52 @@ test('verified advisor sees their own stable routing code',async()=>{
   await x.api.refreshAdvisorCode();
   assert.match(x.elements.get('advisor-online-inbox').innerHTML,/ADV-AAAAAAAAAAAAAAAAAAAAAAAA/);
   assert.ok(x.calls.some(([kind,name])=>kind==='rpc'&&name==='advisor_get_my_code'));
+});
+
+
+test('early verification checks the registered ID, university code and full name',async()=>{
+  const x=app('student');
+  assert.equal(await x.api.verifyTranscript(),true);
+  const check=x.calls.find(([kind,name])=>kind==='rpc'&&name==='advisor_check_transcript_roster');
+  assert.ok(check);
+  assert.equal(check[2].p_student_id,'12345678901234');
+  assert.equal(check[2].p_student_number,'99912345');
+  assert.equal(check[2].p_student_name,'طالب اختبار تجريبي كامل');
+  assert.match(x.elements.get('student-advisor-verification').innerHTML,/Official Test Advisor/);
+  assert.equal(x.elements.get('btn-send-ap').disabled,false);
+});
+
+test('mismatched national ID blocks the advisor check and Send for Approval button',async()=>{
+  const x=app('student');
+  x.S.transcript.student.nationalId='99999999999999';
+  assert.equal(await x.api.verifyTranscript(),false);
+  assert.match(x.elements.get('student-advisor-verification').innerHTML,/14-digit ID/);
+  assert.equal(x.elements.get('btn-send-ap').disabled,true);
+  assert.ok(!x.calls.some(([kind,name])=>kind==='rpc'&&name==='advisor_check_transcript_roster'));
+  assert.equal(await x.api.submit(request),false);
+  assert.ok(!x.calls.some(([kind,name])=>kind==='rpc'&&name==='advisor_submit_verified_plan'));
+});
+
+test('a missing official roster blocks request and notification',async()=>{
+  const x=app('student',{preflightStatus:'not_found'});
+  assert.equal(await x.api.verifyTranscript(),false);
+  assert.equal(x.elements.get('btn-send-ap').disabled,true);
+  assert.match(x.elements.get('student-advisor-verification').innerHTML,/not found together/);
+  assert.equal(await x.api.submit(request),false);
+  assert.ok(!x.calls.some(([kind,name])=>kind==='invoke'&&name==='advisor-request-notify'));
+});
+
+test('a new transcript clears the old verification and disables the send button',async()=>{
+  const x=app('student');
+  assert.equal(await x.api.verifyTranscript(),true);
+  x.S.transcript.student.number='99988877';
+  x.api.renderVerification();
+  assert.equal(x.api.isVerified(),false);
+  assert.equal(x.elements.get('btn-send-ap').disabled,true);
+});
+
+test('administrator-approved exception can be verified without an official roster',async()=>{
+  const x=app('student',{preflightStatus:'verified'});
+  assert.equal(await x.api.verifyTranscript(),true);
+  assert.equal(x.api.isVerified(),true);
 });
