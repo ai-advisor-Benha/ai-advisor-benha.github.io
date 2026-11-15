@@ -160,9 +160,9 @@ begin
   if jsonb_array_length(p_request->'plan') not between 1 and 30
      or jsonb_array_length(p_request->'attempts') > 600
      or exists (
-       select 1 from jsonb_array_elements(p_request->'plan') c
-       where jsonb_typeof(c) <> 'string'
-          or length(trim(both '"' from c::text)) not between 2 and 30
+       select 1 from jsonb_array_elements(p_request->'plan') as c(item)
+       where jsonb_typeof(c.item) <> 'string'
+          or length(trim(both '"' from c.item::text)) not between 2 and 30
      )
   then
     raise exception 'Plan or transcript size/format is unsupported.';
