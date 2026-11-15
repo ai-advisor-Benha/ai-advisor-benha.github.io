@@ -106,9 +106,21 @@
         <button type="button" class="btn btn-ghost btn-sm" data-inbox-action="student-refresh">${safe(w().refresh)}</button>
       </div>
       ${studentError ? `<div class="alert alert-am small" role="status">${safe(studentError)}</div>` : ''}
+      ${pendingCodeRequest ? `<form id="student-advisor-code-form" class="panel panel-pad space-y-3" autocomplete="off">
+        <p class="small">${safe(w().needCode)}</p>
+        <div class="flex flex-wrap gap-2 items-end">
+          <div class="field" style="flex:1;min-width:230px">
+            <label for="student-advisor-code" class="small">${safe(w().codeLabel)}</label>
+            <input id="student-advisor-code" class="input" type="text" maxlength="28" placeholder="${safe(w().codePlaceholder)}" required
+              autocapitalize="characters" autocomplete="off" spellcheck="false" style="width:100%">
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm">${safe(w().codeButton)}</button>
+        </div>
+      </form>` : ''}
+      ${noticeWarning ? `<p class="alert alert-am small" role="status">${safe(noticeWarning)}</p>` : ''}
       <div class="small muted">${safe(w().manual)}</div>
       ${requests.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>${safe(w().columns[1])}</th><th>${safe(w().columns[2])}</th><th>${safe(w().columns[3])}</th></tr></thead><tbody>
-        ${requests.map(r => `<tr><td>${safe(r.term)} · ${safe(r.program)}</td><td>${status(r.status)}</td><td class="small">${safe(fmt(r.created_at))}</td></tr>`).join('')}
+        ${requests.map(r => `<tr><td>${safe(r.term)} · ${safe(r.program)}</td><td>${status(r.status)}${r.decision?.comment ? `<div class="small muted" dir="auto">${safe(r.decision.comment)}</div>` : ''}</td><td class="small">${safe(fmt(r.created_at))}</td></tr>`).join('')}
       </tbody></table></div>` : `<p class="small muted">${safe(w().studentEmpty)}</p>`}
       <p class="small" id="student-online-status" aria-live="polite"></p>
     </div>`;
@@ -140,26 +152,65 @@
     renderStudent();
   }
 
-  async function submit(r) {
+  async function submit(r,enteredCode='') {
     if (busySubmit) return false;
     if (!signedStudent() || r.demo) {
-      studentError = w().demo;
-      renderStudent(); return false;
+      studentError = w().demo; renderStudent(); return false;
     }
-    busySubmit = true;
-    studentError = w().sending; renderStudent();
+    busySubmit=true;
+    studentError=w().sending;noticeWarning='';renderStudent();
     try {
-      const {error} = await c().rpc('advisor_submit_plan',{p_request:r});
-      if (error) throw error;
+      const selection=await c().from('advisor_student_assignments')
+        .select('advisor_id').eq('student_id',S.session.authUserId).maybeSingle();
+      if(selection.error)throw selection.error;
+      const code=String(enteredCode||'').trim().toUpperCase();
+      if(!selection.data && !code) {
+        pendingCodeRequest=r;
+        studentError=w().needCode;
+        renderStudent();
+        $('student-advisor-code')?.focus?.();
+        return false;
+      }
+      if(code && !/^ADV-[A-F0-9]{24}$/.test(code))
+        throw new Error(w().codeIncorrect);
+      const {data:requestId,error}=await c().rpc('advisor_submit_plan',
+        {p_request:r,p_advisor_code:code||null});
+      if(error)throw error;
+      pendingCodeRequest=null;
       await refreshStudent();
-      studentError = w().sent;
+      studentError=w().sent;
+      // Email is a secondary alert. The Supabase inbox is authoritative.
+      try {
+        const invoke=c().functions?.invoke;
+        if(typeof invoke==='function') {
+          const notice=await c().functions.invoke('advisor-request-notify',
+            {body:{requestId}});
+          if(notice.error || notice.data?.ok!==true) {
+            let message=notice.error?.message||notice.data?.error||'Notification not confirmed';
+            try {
+              const details=await notice.error?.context?.json?.();
+              if(details?.error)message=details.error;
+            }catch(_){}
+            noticeWarning=w().notificationsFailed+message;
+          }
+        }
+      }catch(mailError) {
+        noticeWarning=w().notificationsFailed+errorText(mailError);
+      }
       renderStudent();
       return true;
-    } catch (e) {
-      studentError = w().backup + errorText(e);
-      renderStudent();
-      return false;
-    } finally { busySubmit = false; }
+    } catch(e) {
+      studentError=w().backup+errorText(e);
+      renderStudent();return false;
+    } finally {busySubmit=false;}
+  }
+  async function submitCodeForm(code) {
+    if(!pendingCodeRequest || busySubmit)return;
+    const current=await buildRequest();
+    if(current.fingerprint!==pendingCodeRequest.fingerprint) {
+      pendingCodeRequest=null;studentError=w().codeChanged;renderStudent();return;
+    }
+    await submit(pendingCodeRequest,code);
   }
 
   function renderAdvisor() {
