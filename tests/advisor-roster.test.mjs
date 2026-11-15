@@ -70,3 +70,47 @@ test('rejects rows without university codes',async()=>{
   ];
   await assert.rejects(()=>app({rows}).parseOfficialRoster(upload),/invalid university code/);
 });
+
+test('advisor preview shows all parsed student names next to report and supports local filtering', async()=>{
+  const listeners={};
+  const elements=new Map();
+  const element=id=>{
+    if(!elements.has(id))elements.set(id,{innerHTML:'',textContent:''});
+    return elements.get(id);
+  };
+  const title='تقرير طلاب المرشد الاكاديمي الاستاذ الدكتور مرشد الجامعة التحقق كلية الحاسبات والذكاء الاصطناعي - حسابات علمية';
+  const studentRows=[
+    ['م','اسم الطالب','كود الطالب'],
+    ['1','طالب تجريبي جامعي اول','99100465'],
+    ['2','طالب تجريبي جامعي ثاني','99100466']
+  ];
+  const heading=cellRows([['',title]]);
+  heading.textContent=title+' 15/11/2026';
+  const doc={
+    getElementById:element,
+    addEventListener(name,handler){(listeners[name]||=[]).push(handler);}
+  };
+  const parser=class {
+    parseFromString(){return {getElementById:id=>
+      id==='headerTbl'?heading:id==='ReportTbl'?cellRows(studentRows):null};}
+  };
+  const context={window:{},document:doc,DOMParser:parser,
+    S:{session:{role:'advisor',actualRole:'advisor',authUserId:'verified-advisor'}},LANG:'en'};
+  vm.createContext(context);
+  vm.runInContext(source,context,{filename:'advisor-roster.js'});
+  context.window.AdvisorRoster.bind();
+  await listeners.change[0]({target:{id:'advisor-official-file',files:[upload]}});
+  const preview=element('advisor-official-roster').innerHTML;
+  assert.match(preview,/md:grid-cols-2/);
+  assert.match(preview,/advisor-roster-preview-search/);
+  assert.match(preview,/99100465/);
+  assert.match(preview,/99100466/);
+  assert.match(preview,/2 \/ 2/);
+  listeners.input[0]({target:{id:'advisor-roster-preview-search',value:'99100466'}});
+  assert.match(element('advisor-roster-preview-rows').innerHTML,/99100466/);
+  assert.doesNotMatch(element('advisor-roster-preview-rows').innerHTML,/99100465/);
+  assert.equal(element('advisor-roster-preview-count').textContent,'1 / 2');
+  listeners.input[0]({target:{id:'advisor-roster-preview-search',value:'اول'}});
+  assert.match(element('advisor-roster-preview-rows').innerHTML,/99100465/);
+  assert.doesNotMatch(element('advisor-roster-preview-rows').innerHTML,/99100466/);
+});
