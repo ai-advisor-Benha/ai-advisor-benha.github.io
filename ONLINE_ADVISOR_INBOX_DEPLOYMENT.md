@@ -27,6 +27,13 @@ Replace the mandatory manual handoff of student approval-request JSON with a sec
 9. Sign in as the student again (or use **Refresh status**). The online history shows the decision; if the student's currently loaded plan and fingerprint match, the decision also appears in the normal Step 5 decision panel. It will not be silently applied to a different plan.
 10. Check the Brevo notification logs independently. Email acceptance does not guarantee delivery.
 
+## Tests and operational limits
+
+- Run the dependency-free browser-client smoke suite with `node --test tests/advisor-inbox.test.mjs`. It uses mock Supabase calls and does not touch real student data.
+- The database RPC limits each student to 20 pending plans and 30 new submissions per hour; exact limits can be reviewed with faculty policy before rollout.
+- The existing Brevo Edge Function independently limits email attempts to **30 per advisor per 24 hours**. Online decisions remain available even if this email quota is exceeded. Increase email throughput only after an approved operational review.
+- This pull request has not executed tests against the real Supabase project. Database migration, RLS role tests and real student/advisor email notifications must be validated in a staging project before production.
+
 ## Security model
 
 - The student uploads their approval-request JSON **intentionally**. This includes course-attempt and grade details necessary for an advisor's independent bylaw check. It is not a complete university SIS sync.
