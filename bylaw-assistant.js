@@ -2,16 +2,21 @@
 (() => {
   'use strict';
   const P=globalThis.BylawProtocol;
-  async function ask({question,language,context,history=[],privateValues=[],tools,invoke,signal,isCurrent=()=>true,onEvidence=()=>{}}){
+  async function ask({question,language,context,history=[],privateValues=[],tools,invoke,signal,isCurrent=()=>true,onEvidence=()=>{},timeoutMs=110000}){
     if(question.length>P.LIMITS.question)throw {code:'invalid_input'};
     const safeQuestion=P.redact(question,privateValues);
-    const records=[];
-    const check=()=>{if(signal?.aborted)throw new DOMException('Aborted','AbortError');if(!isCurrent())throw {code:'context_changed'};};
+    signal=AbortSignal.any([signal||new AbortController().signal,AbortSignal.timeout(timeoutMs)]);
+    const records=[],publicRuleCache=new Map(); // Request-scoped, public rules only; never student results.
+    const check=()=>{if(signal?.aborted){if(signal.reason?.name==='TimeoutError')throw {code:'timeout'};throw new DOMException('Aborted','AbortError');}if(!isCurrent())throw {code:'context_changed'};};
     for(let round=0;round<=P.LIMITS.rounds;round++){
       check();
       const body=P.request({question:safeQuestion,language,history:history.slice(-2).map(x=>P.redact(x,privateValues)),
         context:{...context,program:P.redact(context.program,privateValues)},evidence:P.evidence(records,privateValues),final:round===P.LIMITS.rounds});
-      const response=await invoke(body,signal);check();
+      const response=await new Promise((resolve,reject)=>{
+        const abort=()=>reject(signal.reason?.name==='TimeoutError'?{code:'timeout'}:signal.reason);
+        signal.addEventListener('abort',abort,{once:true});
+        Promise.resolve().then(()=>invoke(body,signal)).then(resolve,reject).finally(()=>signal.removeEventListener('abort',abort));
+      });check();
       if(response.calls){
         if(round===P.LIMITS.rounds||!Array.isArray(response.calls)||response.calls.length>P.LIMITS.calls)throw {code:'invalid_tool'};
         for(const item of response.calls){
@@ -20,7 +25,9 @@
           const record={...c};
           try{
             if(c.name==='credit_limit'&&!context.hasTranscript&&c.input.hypothetical_cgpa===undefined)throw new Error('Transcript required');
-            record.result=tool.execute(c.input);
+            const cacheKey=JSON.stringify(c.input);
+            if(c.name==='lookup_rule'&&publicRuleCache.has(cacheKey))record.result=JSON.parse(publicRuleCache.get(cacheKey));
+            else {record.result=tool.execute(c.input);if(c.name==='lookup_rule')publicRuleCache.set(cacheKey,JSON.stringify(record.result));}
           }catch{record.error=true;}
           check();records.push(record);onEvidence(P.evidence([record],privateValues)[0]);
         }
@@ -39,7 +46,7 @@
       body:JSON.stringify(body),signal:AbortSignal.any([signal,AbortSignal.timeout(65000)])});}
     catch(e){if(signal.aborted)throw e;throw {code:e.name==='TimeoutError'?'timeout':'unavailable'};}
     const result=await response.json().catch(()=>({}));
-    if(!response.ok)throw {code:result.code||(response.status===401?'unauthorized':response.status===429?'rate_limited':'unavailable')};
+    if(!response.ok)throw {code:result.code||(response.status===401?'unauthorized':response.status===429?'rate_limited':'unavailable'),retryAfter:Math.min(86400,Math.max(1,Number(response.headers.get('retry-after'))||Number(result.retryAfter)||60))};
     return result;
   }
   const labels={

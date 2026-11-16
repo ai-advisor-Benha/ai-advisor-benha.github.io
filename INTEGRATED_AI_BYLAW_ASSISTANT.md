@@ -1,5 +1,7 @@
 # Ask the Bylaw / اسأل اللائحة
 
+For the hosted Groq adapter, private configuration, local testing and later deployment, see [inference/GROQ_SETUP.md](inference/GROQ_SETUP.md). The original self-hosted model option below remains available.
+
 Implementation date: 15 November 2026. Local feature branch: `feature/integrated-ai-bylaw-assistant`.
 
 The owner has now authorized publishing the website replacement. This release publishes the frontend and supporting source only. It does not deploy an inference service or Edge Function, purchase hosting, apply SQL, change accounts, or modify production records. Model activation still requires hosting and configuration. Do not run a database reset or push the existing migration directory for this feature.

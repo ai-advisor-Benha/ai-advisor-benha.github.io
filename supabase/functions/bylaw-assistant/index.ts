@@ -17,7 +17,9 @@ async function authenticate(jwt:string){
 }
 async function infer(payload:unknown,userId:string,signal:AbortSignal){
   const url=env('BYLAW_GATEWAY_URL'),secret=env('BYLAW_GATEWAY_SECRET');
-  if(!url||secret.length<32||/REPLACE_WITH|CHANGE_ME/i.test(secret)||new URL(url).protocol!=='https:')throw {code:'unavailable',status:503};
+  if(!url||secret.length<32||/REPLACE_WITH|CHANGE_ME/i.test(secret))throw {code:'unavailable',status:503};
+  const gateway=new URL(url);
+  if(gateway.protocol!=='https:'||gateway.username||gateway.password||gateway.search||gateway.hash||gateway.pathname!=='/infer')throw {code:'unavailable',status:503};
   // Pseudonym used ONLY by our gateway for durable quotas; never passed to the model.
   const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);
   const signed=await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(userId));
@@ -26,7 +28,8 @@ async function infer(payload:unknown,userId:string,signal:AbortSignal){
   try{response=await fetch(url,{method:'POST',redirect:'error',headers:{'content-type':'application/json',Authorization:`Bearer ${secret}`},
     body:JSON.stringify({subject,payload}),signal:AbortSignal.any([signal,AbortSignal.timeout(55000)])});}
   catch{throw {code:'timeout',status:504};}
-  if(!response.ok)throw {code:response.status===429?'rate_limited':'unavailable',status:response.status===429?429:503};
+  if(!response.ok)throw {code:response.status===429?'rate_limited':response.status===504?'timeout':'unavailable',status:response.status===429?429:response.status===504?504:503,
+    ...(response.status===429?{retryAfter:Math.min(86400,Math.max(1,Number(response.headers.get('retry-after'))||60))}:{})};
   // Bound upstream output too; raw upstream errors and credentials never reach the browser.
   const {readJSON}=await import('./handler.mjs');return readJSON(response,64000);
 }
