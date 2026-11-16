@@ -4277,7 +4277,7 @@ async function askQA(q) {
   }catch(e){
     if(generation!==qaGeneration)return;
     if(e?.code==='context_changed'){resetQA();$('qa-err').textContent=BylawProtocol.message('context_changed',language);return;}
-    msg.content=controller.signal.aborted?(language==='ar'?'تم إيقاف الإجابة.':'Answer stopped.'):BylawProtocol.message(e?.code,language);
+    msg.content=controller.signal.aborted?(language==='ar'?'تم إيقاف الإجابة.':'Answer stopped.'):BylawProtocol.message(e?.code,language,e?.retryAfter);
   }finally{
     if(generation===qaGeneration){qaBusy=false;qaCtl=null;renderQA();}
   }

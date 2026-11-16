@@ -24,7 +24,7 @@ test('gateway defaults reject remote/paid endpoints and weak secrets',()=>{
 });
 test('gateway auth, rate limits, provider isolation and safe failures over real HTTP',async()=>{
   let calls=0,allowed=true;let captured;
-  const server=createGateway({secret,upstream:'http://127.0.0.1:8080/v1/chat/completions',model:'Qwen3-8B',quota:{take:()=>allowed},fetchImpl:async(url,options)=>{calls++;captured=JSON.parse(options.body);return Response.json({choices:[{message:{content:'test'}}]});}});
+  const server=createGateway({secret,upstream:'http://127.0.0.1:8080/v1/chat/completions',model:'Qwen3-8B',quota:{take:()=>allowed},fetchImpl:async(url,options)=>{calls++;captured=JSON.parse(options.body);return Response.json({choices:[{finish_reason:'stop',message:{content:'test'}}]});}});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   const endpoint=`http://127.0.0.1:${server.address().port}/infer`;
   const send=(token=secret)=>fetch(endpoint,{method:'POST',headers:{authorization:'Bearer '+token},body:JSON.stringify({subject,payload:{messages:[{role:'system',content:'rules'},{role:'user',content:'question'}],model:'unapproved',max_tokens:999999}})});

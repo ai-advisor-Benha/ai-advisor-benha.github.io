@@ -11,7 +11,7 @@ const response=text=>({choices:[{finish_reason:'stop',message:{content:text}}]})
 const toolCall=(name,input={})=>({choices:[{finish_reason:'tool_calls',message:{tool_calls:[{type:'function',function:{name,arguments:JSON.stringify(input)}}]}}]});
 function client(){const c={window:{},BylawProtocol:P,DOMException,AbortSignal};vm.createContext(c);vm.runInContext(readFileSync(new URL('../bylaw-assistant.js',import.meta.url),'utf8'),c);return c.window.BylawAssistant;}
 const request=(input=body(),headers={authorization:'Bearer valid'})=>new Request('https://example.invalid',{method:'POST',headers,body:JSON.stringify(input)});
-for(const [language,question] of [['en','How many credit hours can I take?'],['ar','كم ساعة يمكنني تسجيلها؟']]){
+for(const [language,question] of [['en','Explain the credit limit that applies to my record.'],['ar','اشرح حد الساعات حسب سجلي الأكاديمي.']]){
   test(`${language}: model selects existing tool, engine executes, grounded explanation returns`,async()=>{
     let runs=0,calls=0;const sent=[];
     const handler=createHandler({authenticate:async()=>({id:'student-1',role:'student'}),infer:async(payload)=>{
@@ -98,7 +98,7 @@ test('cancellation and context changes prevent stale answers and tool execution'
 });
 for(const [code,status] of [['rate_limited',429],['unavailable',503],['timeout',504]])test(`safe bilingual ${code} errors do not leak secrets`,async()=>{
   const h=createHandler({authenticate:async()=>({id:'u',role:'student'}),infer:async()=>{throw {code,status,message:'SECRET provider response'};}});
-  const r=await h(request());assert.equal(r.status,status);assert.deepEqual(await r.json(),{code});assert.match(P.message(code,'ar'),/[\u0600-\u06ff]/);assert.match(P.message(code,'en'),/[A-Za-z]/);
+  const r=await h(request(body('Explain my registration options.')));assert.equal(r.status,status);assert.deepEqual(await r.json(),{code});assert.match(P.message(code,'ar'),/[\u0600-\u06ff]/);assert.match(P.message(code,'en'),/[A-Za-z]/);
 });
 test('all requested academic tools exist in the original engine and shared protocol',()=>{
   const source=readFileSync(new URL('../index.html',import.meta.url),'utf8');
